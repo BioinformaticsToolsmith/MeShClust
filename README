@@ -1,0 +1,9 @@
+Mean Shift
+Version: July 14, 2017
+
+Compilation:
+
+make
+
+Usage: bin/meanshift *.fasta --id 0.97 [--output output.clstr]
+

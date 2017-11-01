@@ -1,9 +1,25 @@
-Mean Shift
-Version: July 14, 2017
+MeShClust
+Beta version
 
-Compilation:
+Requirements: g++ 4.9.1 or later, requires Homebrew on Mac OS X
 
+Compilation using g++ (homebrew) and GNU Make on Mac OS X
+CXX=g++-7 make
+
+see: https://stackoverflow.com/questions/29057437/compile-openmp-programs-with-gcc-compiler-on-os-x-yosemite
+
+
+Linux/Unix compilation:
 make
 
-Usage: bin/meanshift *.fasta --id 0.97 [--output output.clstr]
+Usage: bin/meshclust *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20]
 
+The most important parameter, --id, controls the identity of the sequences.
+
+--kmer decides the size of the kmers. Increasing kmer size can increase accuracy, but increases memory consumption fourfold.
+
+--delta decides how many clusters are looked around in the final clustering stage, increasing it creates more accuracy, but takes more time.
+
+--output specifies the output file, in CD-HIT's CLSTR format
+
+--iterations specifies how many iterations in the final stage of merging are done until convergence.

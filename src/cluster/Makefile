@@ -1,4 +1,4 @@
-NAME ?= meanshift
+TARGET ?= meshclust
 CXX ?= g++
 ifeq ($(debug),yes)
 	CXXFLAGS += -ggdb
@@ -12,9 +12,9 @@ SOURCES := $(shell find ./src -name '*.cpp')
 OBJECTS = $(SOURCES:%.cpp=bin/%.o)
 BIN_OBJECTS := $(shell find  ../../bin/ -mindepth 2 -name '*.o')
 
-all: clean $(NAME)
+all: clean $(TARGET)
 
-$(NAME): $(OBJECTS) $(BIN_OBJECTS)
+$(TARGET): $(OBJECTS) $(BIN_OBJECTS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 bin/%.o: %.cpp
@@ -22,9 +22,9 @@ bin/%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	$(RM) $(OBJECTS) $(NAME)
+	$(RM) $(OBJECTS) $(TARGET)
 
-install: $(NAME)
-	cp $(NAME) ~/bin
+install: $(TARGET)
+	cp $(TARGET) ~/bin
 
 .PHONY: all clean install

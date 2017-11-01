@@ -1,5 +1,4 @@
-
-all: bin/Red.o bin/meanshift
+all: bin/Red.o bin/meshclust
 
 bin/Red.o:
 	mkdir -p bin
@@ -7,9 +6,9 @@ bin/Red.o:
 	mkdir -p bin/nonltr
 	mkdir -p bin/utility
 	$(MAKE) -C src
-bin/meanshift: bin/Red.o
+bin/meshclust: bin/Red.o
 	$(MAKE) -C src/cluster
-	cp src/cluster/meanshift bin
+	cp src/cluster/meshclust bin
 
 clean:
 	$(MAKE) clean -C src

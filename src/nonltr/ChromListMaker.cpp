@@ -19,6 +19,33 @@ ChromListMaker::~ChromListMaker() {
 	delete chromList;
 }
 
+
+std::istream& safe_getline(std::istream& is, std::string& t)
+{
+	t.clear();
+	std::istream::sentry se(is, true);
+	std::streambuf* sb = is.rdbuf();
+	for(;;) {
+		int c = sb->sbumpc();
+		switch (c) {
+		case '\n':
+			return is;
+		case '\r':
+			if (sb->sgetc() == '\n') {
+				sb->sbumpc();
+			}
+			return is;
+		case std::streambuf::traits_type::eof():
+			if (t.empty()) {
+				is.setstate(std::ios::eofbit);
+			}
+			return is;
+		default:
+			t += (char)c;
+		}
+	}
+}
+
 const vector<Chromosome *> * ChromListMaker::makeChromList() {
 	ifstream in(seqFile.c_str());
 	bool isFirst = true;
@@ -26,7 +53,7 @@ const vector<Chromosome *> * ChromListMaker::makeChromList() {
 
 	while (in.good()) {
 		string line;
-		getline(in, line);
+		safe_getline(in, line);
 		if (line[0] == '>') {
 			if (!isFirst) {
 				chrom->finalize();
@@ -55,7 +82,7 @@ const vector<Chromosome *> * ChromListMaker::makeChromOneDigitList() {
 
 	while (in.good()) {
 		string line;
-		getline(in, line);
+		safe_getline(in, line);
 		if (line[0] == '>') {
 			if (!isFirst) {
 				chrom->finalize();

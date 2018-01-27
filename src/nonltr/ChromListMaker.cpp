@@ -64,6 +64,20 @@ const vector<Chromosome *> * ChromListMaker::makeChromList() {
 
 			chrom = new Chromosome();
 			chrom->setHeader(line);
+		} else if (line[0] == ' ' || line[0] == '\t') {
+			bool all_spaces = true;
+			for (auto c : line) {
+				if (c != ' ' && c != '\t') {
+					all_spaces = false;
+				}
+			}
+			if (all_spaces) {
+				continue;
+			}
+			std::ostringstream oss;
+			oss << chrom->getHeader() << line;
+			std::string new_header = oss.str();
+			chrom->setHeader(new_header);
 		} else {
 			chrom->appendToSequence(line);
 		}

@@ -16,11 +16,12 @@
 #include <string>
 #include <list>
 #include "Histogram.h"
-#include "CenterCreator.h"
 #include "../../nonltr/KmerHashTable.h"
 #include "../../nonltr/ChromListMaker.h"
 #include "DivergencePoint.h"
-#include <omp.h>
+#include "Center.h"
+#include "Progress.h"
+//#include <omp.h>
 
 template<class T>
 T avg_distance(Point<T> &c, const std::vector<Point<T>*> &vec)
@@ -187,133 +188,6 @@ void sort_nn_length(std::vector<Point<T>*> &points, double similarity) {
 }
 
 
-template<class T>
-std::pair<
-	std::vector<Point<T>*>,
-	std::map<Point<T>*, std::vector<Point<T>*>*>>
-ClusterFactory<T>::get_centers(std::vector<Point<T> *> &points, T bandwidth, DivMatrix<T> &dm, int arg)
-{
-	cout << "Getting centers...";
-	cout.flush();
-	double sim = 100.0 * (1.0 - bandwidth / pow(4, k));
-	std::map<Point<T>*, std::vector<Point<T>*>*> initial_cluster;
-	if (true) {
-		return make_pair(m_centers, initial_cluster);
-	} else if (false) {
-		std::vector<Point<T>*> centers;
-		for (int i = 0; i < points.size(); i++) {
-			if (i % 4 == 0) {
-				centers.push_back(points[i]->clone());
-			}
-		}
-		return make_pair(centers,initial_cluster);
-	} else if (false) {
-		CenterCreator<T> cc(dm, bandwidth, arg);
-		auto pr = cc.get_centers(points, [&](vector<Point<T>*> &c) {
-				return sort_nn_length(c, sim);
-			}, num_per_partition);
-		cout << "Done" << endl;
-		//merge(pr.first, pr.second, bandwidth);
-		auto prev_centers = pr.first;
-		int n_before = prev_centers.size();
-		sort_nn_length(pr.first, sim);
-		assert(prev_centers.size() == n_before);
-//		return pr;
-		// for (auto p : points) {
-		// 	cout << p->get_header() << endl;
-		// }
-//		exit(0);
-	        int new_index = 0;
-		vector<Point<T>*> new_vec;
-		cout << "Centers size: " << pr.first.size() << endl;
-		Point<T>* last_point = NULL;
-		for (auto kv : pr.first) {
-			cout << "center: " << kv->get_header() << " => " << endl;
-			auto pts_in_clstr = pr.second[kv];
-
-			sort_nn(*pts_in_clstr, last_point); // Sort these points
-
-			for (auto p : *pts_in_clstr) {
-				p->set_id(new_index);
-				new_vec.push_back(p);
-				cout << new_index << ":" << p->get_header() << endl;
-				new_index++;
-			}
-			cout << endl;
-			last_point = kv;
-		}
-		for (auto center : prev_centers) {
-			auto old_id = center->get_id();
-			auto new_id = points[old_id]->get_id();
-			center->set_id(new_id);
-//			new_center_vec.push_back(new_center);
-			// auto pts_in_clstr = pr.second[old_center];
-			// vector<Point<T>*> *new_clstr_vec = new vector<Point<T>*>();
-			// for (auto old_pt : *pts_in_clstr) {
-			// 	auto new_pt_id = lookup_map[old_pt->get_id()];
-			// 	auto new_pt = new_pt_vec[new_pt_id];
-			// 	new_clstr_vec->push_back(new_pt);
-			// }
-			// new_cluster[new_center] = new_clstr_vec;
-		}
-		points = new_vec;
-		dm.reset(points);
-		// for (auto p : new_pt_vec) {
-		// 	cout << p->get_header() << endl;
-		// }
-
-
-
-
-		// for (auto p : points) {
-		// 	delete p;
-		// }
-		// for (auto c : pr.first) {
-		// 	delete c;
-		// }
-		// points = new_pt_vec;
-		return make_pair(prev_centers, pr.second);
-	} else { // arg = k
-		const int prev = arg;
-		int index = 0;
-		vector<vector<Point<T>*>*> tot_vec;
-		vector<Point<T>*> *vec = NULL;
-		vector<Point<T>*> centers;
-		for (int index = 0; index < points.size(); index++) {
-			if (vec == NULL) {
-				vec = new vector<Point<T>*>();
-				vec->push_back(points[index]);
-				continue;
-			}
-			T dist = vec->back()->distance(*points[index]);
-			if (dist <= bandwidth) {
-				vec->push_back(points[index]);
-			} else {
-				tot_vec.push_back(vec);
-				vec = new vector<Point<T>*>();
-				vec->push_back(points[index]);
-			}
-		}
-		if (vec != NULL) {
-			tot_vec.push_back(vec);
-		}
-		for (auto v : tot_vec) {
-			auto c = find_center(*v)->clone();
-
-			cout << "Cluster:-----------------------------------size=" << v->size() << endl;
-			centers.push_back(c);
-			initial_cluster[c] = v;
-			for (auto pt : *v) {
-				if (pt->get_id() == c->get_id()) {
-					cout << "[*]";
-				}
-				cout << pt->get_header() << endl;
-			}
-		}
-		cout << "Done" << endl;
-		return make_pair(centers, initial_cluster);
-	}
-}
 
 template<class T>
 void calculate_gaps(const vector<Point<T>*> &vec, queue<int> &gaps, std::function<bool(const Point<T>&, const Point<T>&)> func)
@@ -373,7 +247,7 @@ vector<pair<int,double> > get_available_or_min(const vector<Point<T>*> &points, 
 		}
 	}
 	bool f;
-	auto close = trn.get_close(p, good, f);
+	vector<pair<int,double> > close;// = trn.get_close(p, good, f);
 	used_min = f;
 	return close;
 	// if (used_min) {
@@ -409,11 +283,12 @@ vector<pair<int,double> > get_available_or_min(const vector<Point<T>*> &points, 
 }
 
 template<class T>
-void mean_shift_update(const map<Point<T>*, vector<Point<T>*> > &part, vector<Point<T>*> centers, int j, const Trainer<T>& trn, int delta)
+void mean_shift_update(vector<Center<T> > &part, int j, const Trainer<T>& trn, int delta)
 {
-	auto center = centers[j];
+	auto center = part[j].getCenter();
+
 	int i_begin = std::max(0, j - delta);
-	int i_end = std::min(j + delta, (int)centers.size()-1);
+	int i_end = std::min(j + delta, (int)part.size()-1);
 	// if (i_begin == i_end) {
 	// 	return;
 	// }
@@ -423,7 +298,8 @@ void mean_shift_update(const map<Point<T>*, vector<Point<T>*> > &part, vector<Po
 	uintmax_t bottom = 0;
 	vector<pair<Point<T>*, bool> > good;
 	for (int i = i_begin; i <= i_end; i++) {
-		const auto& vec = part.at(centers[i]);
+//		const auto& vec = part.at(centers[i]);
+		const auto& vec = part[i].getPoints();
 		for (auto p : vec) {
 			good.push_back(make_pair(p, false));
 			// p->set_arg_to_this_d(*temp);
@@ -460,98 +336,111 @@ void mean_shift_update(const map<Point<T>*, vector<Point<T>*> > &part, vector<Po
 }
 
 template<class T>
-int get_mean(vector<int> &available, Point<T>& last, vector<Point<T>*> &points, double bandwidth)
+Point<T>* get_mean(vector<Point<T>*> &available, Point<T>& last, double bandwidth)
 {
 	Point<double>* top = last.create_double();
 	top->zero();
 	Point<double>* temp = top->clone();
 	double bottom = 0;
 	const int N = available.size();
-	double *distances = new double[N];
-// #pragma omp parallel for if (N > 10)
-// 	for (int i = 0; i < available.size(); i++) {
-// 		double dist = points[available[i]]->distance(last);
-// 		double x = dist / bandwidth;
-// 		distances[i] = exp(-1 * x * x);
-// 	}
+	if (N == 0) {
+		throw "N cannot be 0, bad";
+	}
 	bottom = available.size();
-	for (int i = 0; i < available.size(); i++) {
-		points[available[i]]->set_arg_to_this_d(*temp);
+	// TODO: parallelize this loop
+	for (int i = 0; i < N; i++) {
+		available[i]->set_arg_to_this_d(*temp);
 		*top += *temp;
 	}
 
 	if (bottom != 0) {
 		*top /= bottom;
 	} else {
-		points.back()->set_arg_to_this_d(*top);
+		cerr << "No points in vector" << endl;
+		throw 5;
 	}
+#pragma omp declare reduction(cmin:std::pair<Point<T>*,double>: \
+			      omp_out = omp_in.second < omp_out.second ? omp_in : omp_out ) \
+        initializer (omp_priv = std::make_pair((Point<T>*)NULL, (double)std::numeric_limits<double>::max()))				\
 
-#pragma omp parallel for if (N > 10)
+	std::pair<Point<T>*,double> result = std::make_pair((Point<T>*)NULL, (double)std::numeric_limits<double>::max());
+	//todo: add pragma back in
+#pragma omp parallel for reduction(cmin:result)
 	for (int i = 0; i < available.size(); i++) {
-		distances[i] = points[available[i]]->distance_d(*top);
-	}
-	int next = available[0];
-	int next_dist = std::numeric_limits<int>::max();
-	for (int i = 0; i < available.size(); i++) {
-		int dist = distances[i];
-		if (dist < next_dist) {
-			next_dist = dist;
-			next = available[i];
+		double dist = available[i]->distance_d(*top);
+		if (dist < result.second) {
+			result = std::make_pair(available[i], dist);
 		}
 	}
-	delete[] distances;
 	delete top;
 	delete temp;
-	return next;
+	if (result.first == NULL && !available.empty()) {
+		throw "not working";
+	}
+	return result.first;
 }
 
-
 template<class T>
-bool merge(vector<Point<T>*> &centers, map<Point<T>*,vector<Point<T>*> > &partition, const Trainer<T>& trn, int delta, int bandwidth)
+bool merge(vector<Center<T> > &centers, const Trainer<T>& trn, int delta, int bandwidth)
 {
 	int num_merge = 0;
 	for (int i = 0; i < centers.size(); i++) {
-		vector<pair<Point<T>*,double> > to_merge;
-		for (int j = i + 1; j < std::min((int)centers.size(), i + 1 + delta); j++) {
-			to_merge.push_back(std::make_pair(centers[j], -1));
-		}
-		Point<T>* closest = trn.merge(centers[i], to_merge);
-		if (closest != NULL) {
-			cout << "Merged center " << centers[i]->get_header() << " and " << closest->get_header() << endl;
+		long ret = trn.merge(centers, i, i + 1, std::min((int)centers.size()-1, i + delta));
+		if (ret > i) {
+
 			num_merge++;
-			auto& to_del = partition[centers[i]];
-			auto& to_add = partition[closest];
+			auto &to_add = centers[ret].getPoints();
+			auto &to_del = centers[i].getPoints();
 			to_add.insert(std::end(to_add), std::begin(to_del), std::end(to_del));
-			partition.erase(centers[i]);
-			centers[i]->set_to_delete(true);
+			centers[i].lazy_remove();
 		}
+		// vector<pair<Point<T>*,double> > to_merge;
+		// for (int j = i + 1; j < std::min((int)centers.size(), i + 1 + delta); j++) {
+		// 	to_merge.push_back(std::make_pair(centers[j].getCenter(), -1));
+		// }
+		// Point<T>* closest = trn.merge(centers[i].getCenter(), to_merge);
+		// if (closest != NULL) {
+		// 	#ifdef DEBUG
+		// 	cout << "Merged center " << centers[i]->get_header() << " and " << closest->get_header() << endl;
+		// 	#endif
+		// 	num_merge++;
+		// 	// auto& to_del = partition[centers[i]];
+		// 	// auto& to_add = partition[closest];
+		// 	// to_add.insert(std::end(to_add), std::begin(to_del), std::end(to_del));
+		// 	// partition.erase(centers[i]);
+		// 	// centers[i]->set_to_delete(true);
+		// 	auto& to_del = partition[centers[i]];
+		// 	auto& to_add = partition[closest];
+		// 	to_add.insert(std::end(to_add), std::begin(to_del), std::end(to_del));
+		// 	partition.erase(centers[i]);
+		// 	centers[i]->set_to_delete(true);
+
+		// }
 	}
-	cout << "Merged " << num_merge << " centers" << endl;
-        auto iter = std::remove_if(centers.begin(), centers.end(), [](Point<T>* p) {
-				return p->is_to_delete();
-		});
-	// TODO memory leak
-	centers.erase(iter, centers.end());
+	//cout << "Merged " << num_merge << " centers" << endl;
+	centers.erase(std::remove_if(centers.begin(), centers.end(), [](const Center<T>& p) {
+			return p.is_delete();
+		}), centers.end());
 	return num_merge > 0;
 }
 
 template<class T>
-void print_output(const string& output, const map<Point<T>*,vector<Point<T>*> > & partition)
+void print_output(const string& output, vector<Center<T> > & partition)
 {
 	cout << "Printing output" << endl;
 	std::ofstream ofs;
 	ofs.open(output, std::ofstream::out);
 	int counter = 0;
-	for (auto const& kv : partition) {
-		if (kv.second.empty()) {
+	for (auto& cen : partition) {
+		if (cen.empty()) {
 			continue;
 		}
 		ofs << ">Cluster " << counter << endl;
 		int pt = 0;
-		for (auto p : kv.second) {
+		for (auto p : cen.getPoints()) {
 			string s = p->get_header();
 			ofs << pt << "\t" << p->get_length() << "nt, " << s << "... ";
-			if (p->get_id() == kv.first->get_id()) {
+			if (p->get_id() == cen.getCenter()->get_id()) {
 				ofs << "*";
 			}
 			ofs << endl;
@@ -672,11 +561,131 @@ void sort(vector<Point<T>*> &points, vector<Point<T>*> &centers, int bandwidth, 
 	print_output(output_file, part);
 }
 
+
+/*
+ * Accumulates points in a center until none are close,
+ * then returns the next center (not cloned)
+ */
 template<class T>
-void ClusterFactory<T>::MS(vector<Point<T>*> &points, T bandwidth, double sim, const Trainer<T>& trn, string output, int iter, int delta)
+size_t accumulate(Point<T>** last_ptr, bvec<T> &points, vector<Center<T> > &centers,
+		const Trainer<T>& trn, double sim, double bandwidth, int total_iter)
 {
-	std::sort(points.begin(), points.end(), [](const Point<T>* a, const Point<T>* b) { return a->get_length() > b->get_length(); });
-	sort(points, m_centers, bandwidth, sim, trn, output, iter, delta);
+	Point<T>* last = *last_ptr;
+	vector<Point<T>*> current = {last};
+	bool is_min = false;
+
+	for (int num_iter=0; !is_min; num_iter++) {
+		#ifdef DEBUG
+		cout << num_iter << " last: " << last->get_header() << endl;
+		#endif
+		auto len = last->get_length();
+		auto bounds = points.get_range(len * sim, len / sim);
+		auto result = trn.get_close(last,
+			      points.iter(bounds.first),
+			      points.iter(bounds.second),
+			      is_min);
+
+		if (is_min) {
+			Point<T>* new_pt = get<0>(result);
+			//	cout << "minimum point: " << new_pt->get_header() << endl;
+			size_t r = get<2>(result);
+			size_t c = get<3>(result);
+			#ifdef DEBUG
+			cout << "center added" << endl;
+			#endif
+			// no close points left for center,
+			// returned value is the next center (return this)
+			//points.remove_available(bounds.first, bounds.second, newvec);
+			if (new_pt == NULL) {
+				// No points left in range, try 1st point
+				*last_ptr = points.pop();
+			} else {
+				// New center
+				*last_ptr = new_pt;
+				points.erase(r, c);
+			}
+			vector<Point<T>*> newvec;
+			points.remove_available(bounds.first, bounds.second, newvec); // DEBUGGING USE ONLY
+			if (!newvec.empty()) {
+				throw "this should never happen";
+			}
+		} else { // keep adding points, find new mean
+			size_t prev_size = current.size();
+			points.remove_available(bounds.first, bounds.second, current);
+
+			last = get_mean(current, *last, bandwidth);
+			size_t added_size = current.size() - prev_size;
+			#ifdef DEBUG
+			cout << "added new points (" << added_size << ")" << endl;
+			#endif
+			if (last == NULL) {
+				cerr << "Last is null" << endl;
+				throw 100;
+			}
+		}
+	}
+//	cout << "Pushed back center " << last->get_header() << endl;
+	Center<T> cc(last, current);
+	centers.push_back(Center<T>(cc));
+//	Center<T> cen(last, current);
+//	centers.emplace_back(last, current);
+	// Point<T>* center = last->clone();
+	// centers.push_back(center);
+	// part[center] = current;
+	#ifdef DEBUG
+	for (auto p : current) {
+		cout << total_iter << " Cluster " << last->get_header() << ": " << p->get_header() << endl;
+	}
+	#endif
+        // if (points.empty()) {
+	// 	return true;
+	// } else {
+	// 	return false;
+	// }
+	return current.size();
+}
+
+
+template<class T>
+void ClusterFactory<T>::MS(bvec<T> &points, T bandwidth, double sim, const Trainer<T>& trn, string output, int iter, int delta)
+{
+	vector<Center<T> > part;
+//	using partition = map<Point<T>*, vector<Point<T>*> >;
+//	partition part;
+	Progress pa(points.size(), "Accumulation");
+	Point<T>* last = points.pop();
+
+        for (int num = 0; last != NULL; num++) {
+	        size_t n = accumulate(&last, points, part, trn, sim, bandwidth, num);
+		pa += n;
+	}
+	pa.end();
+//	points.check();
+	size_t total = 0;
+	for (auto cen  : part) {
+		total += cen.getPoints().size();
+	}
+	cout << "total size: " << total << endl;
+	Progress pu(iter, "Update");
+	for (int i = 0; i < iter; i++) {
+		// #ifdef DEBUG
+		//print_output(output + to_string(i), part);
+		// #endif
+		//cout << "Mean shift iteration " << i << endl;
+		#pragma omp parallel for
+		for (int j = 0; j < part.size(); j++) {
+			mean_shift_update(part, j, trn, delta);
+		}
+		merge(part, trn, delta, bandwidth);
+		pu++;
+	}
+
+	#pragma omp parallel for
+	for (int j = 0; j < m_centers.size(); j++) {
+		mean_shift_update(part, j, trn, 0);
+	}
+	pu.end();
+	print_output(output, part);
 }
 
 /*
@@ -693,17 +702,25 @@ std::vector<Point<T>*> ClusterFactory<T>::build_points(vector<string> fileList, 
 	std::vector<Point<T>*> cpoints;
 	unsigned fsize = fileList.size();
 	std::vector<Point<T>*> initial_centers;
+	std::stringstream buffer;
+	buffer << "Counting " << k << "-mers";
+	Progress p(fsize, buffer.str());
 	for (unsigned i = 0; i < fsize; i++) {
-		cout << "Counting " << k << "-mers in " << fileList.at(i) << " ..." << endl;
+		p++;
 		ChromListMaker *maker = new ChromListMaker(fileList.at(i));
 		const std::vector<Chromosome *> * chromList = maker->makeChromOneDigitList();
 		unsigned csize = chromList->size();
+#pragma omp parallel for ordered
 		for (unsigned h = 0; h < csize; h++) {
 			ChromosomeOneDigit *chrom = dynamic_cast<ChromosomeOneDigit *>(chromList->at(h));
 			if (chrom) {
 				Point<T> *h = get_point(chrom);
 				if (h != NULL) {
+#pragma omp ordered
+					{
+						//	cout << "Header: " << h->get_header() << endl;
 					points.push_back(h);
+					}
 				}
 			} else {
 				throw InvalidStateException(string("Dynamic cast failed"));
@@ -711,7 +728,6 @@ std::vector<Point<T>*> ClusterFactory<T>::build_points(vector<string> fileList, 
 		}
 		delete maker;
 	}
-	cout << "Initial points: " << points.size() << endl;
 	return points;
 //	std::random_shuffle(points.begin(), points.end());
 //	queue<int> gaps;
@@ -896,24 +912,6 @@ void ClusterFactory<T>::sort_nn(std::vector<Point<T> *> &points, Point<T>* neare
 	assert(points.size() == total_points.size());
 	points = total_points;
 	cout << "Done" << endl;
-}
-
-template<class V>
-void fill_table(KmerHashTable<unsigned long, V> &table, ChromosomeOneDigit *chrom, std::vector<V>& values)
-{
-	const int k = table.getK();
-	auto segment = chrom->getSegment();
-	const char *seg_bases = chrom->getBase()->c_str();
-	for (vector<int> *v : *segment) {
-		int start = v->at(0);
-		int end = v->at(1);
-		table.wholesaleIncrement(seg_bases, start, end - k + 1);
-	}
-	std::vector<const char*> keys;
-	table.getKeys(keys);
-	for (const char *str : keys) {
-		values.push_back(table.valueOf(str));
-	}
 }
 
 template<class T>

@@ -70,11 +70,12 @@ uint64_t DivergencePoint<T>::distance(const Point<T>& p) const
 {
 	const DivergencePoint<T>& c = dynamic_cast<const DivergencePoint<T>&>(p);
 	uint64_t dist = 0;
-	uint64_t mag = 0;
+	const uint64_t mag = getPseudoMagnitude() + c.getPseudoMagnitude();
+	#pragma omp simd
 	for (auto i = 0; i < points.size(); i++) {
-		dist += 2 * min(points[i],c.points[i]);
-		mag += points[i] + c.points[i];
+		dist += min(points[i], c.points[i]);
 	}
+	dist *= 2;
 	double frac = (double)dist / mag;
 	return 10000.0 * (1.0 - frac * frac);
 }
@@ -181,6 +182,7 @@ void DivergencePoint<T>::set(Point<T>& p)
 {
 	const DivergencePoint<T>& h = dynamic_cast<const DivergencePoint<T>&>(p);
 	points = std::vector<T>(h.points);
+	set_length(h.get_length());
 	to_delete = h.to_delete;
 	Point<T>::set_header(h.get_header());
 	set_id(h.get_id());

@@ -60,7 +60,7 @@ public:
 
 	void addReverseComplement();
 	I countNonInitialEntries();
-	void getKeys(vector<const char *>& keys);
+	vector<string> *getKeys();
 	void printTable(string);
 	void checkOverflow();
 

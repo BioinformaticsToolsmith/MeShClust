@@ -4,9 +4,14 @@
 #include <set>
 #include <map>
 #include <cmath>
+#include "../../utility/GlobAlignE.h"
+#include "../../utility/AffineId.h"
 #include "needleman_wunsch.h"
 #include "GLM.h"
 #include "Feature.h"
+#include "Progress.h"
+#include <random>
+
 template<class T>
 double Trainer<T>::align(Point<T> *a, Point<T>* b) const
 {
@@ -14,35 +19,127 @@ double Trainer<T>::align(Point<T> *a, Point<T>* b) const
 	auto sb = b->get_data_str();
 	int la = sa.length();
 	int lb = sb.length();
-	needleman_wunsch nw(sa, sb, mat, sigma, epsilon);
-	return nw.identity(nw.align());
+
+	// needleman_wunsch nw(sa, sb, 2, -3, 5, 2);
+	// return nw.identity(nw.align());
+	GlobAlignE galign(sa.c_str(), 0, la-1,
+			  sb.c_str(), 0, lb-1,
+			  1, -1, 2, 1);
+
+	return galign.getIdentity();
+
+}
+
+
+template<class T>
+std::tuple<Point<T>*,double,size_t,size_t> Trainer<T>::get_close(Point<T> *p, bvec_iterator<T> istart, bvec_iterator<T> iend, bool &is_min_r) const
+{
+	int ncols = weights.getNumRow();
+#pragma omp declare reduction(pmax:std::tuple<Point<T>*,double,size_t,size_t>: \
+			      omp_out = get<1>(omp_in) > get<1>(omp_out) ? omp_in : omp_out ) \
+	initializer (omp_priv=std::make_tuple((Point<T>*)NULL,-1,0,0))
+
+	std::tuple<Point<T>*,
+		   double,
+		   size_t,
+		   size_t> result = {NULL,
+				     -1,
+				     0,
+				     0};
+	bool has_found = false;
+
+	#ifdef DEBUG
+	cout << "begin " << istart.r << " " << istart.c << " end " << iend.r << " " << iend.c << endl;
+	for (auto data : *istart.col) {
+		cout << "\t" << data.size() << endl;
+	}
+	#endif
+// #pragma omp parallel for reduction(pmin:result), reduction(||:has_found)
+// 	for (bvec_iterator<T> i = istart; i <= iend; i++) {
+// 		if (i <= iend) {
+// 		Point<T>* pt = (*i).first;
+// 		double sum = weights.get(0, 0);
+// 		double dist = 0;
+// 		for (int col = 1; col < ncols; col++) {
+// 			if (col == 1) {
+// 				dist = ff.at(col-1)(pt, p);
+// 				sum += weights.get(col, 0) * dist;
+// 			} else {
+// 				sum += weights.get(col, 0) * ff.at(col-1)(pt, p);
+// 			}
+// 		}
+// 		double res = round(1.0 / (1 + exp(-sum)));
+
+// // set second to true if result is not 1.0
+// 		// which means it will be removed
+// 		result = std::make_pair(pt, dist);
+// 		has_found = (res != 1.0);
+// 		(*i).second = (res != 1.0);
+// 		}
+// 	}
+	bool is_min = true;
+#pragma omp parallel for reduction(pmax:result), reduction(&&:is_min)
+	for (bvec_iterator<T> i = istart; i <= iend; ++i) {
+		Point<T>* pt = (*i).first;
+		double sum = weights.get(0, 0);
+		double dist = 0;
+		auto cache = feat->compute(*pt, *p);
+		for (int col = 1; col < ncols; col++) {
+			if (col == 1) {
+				dist = (*feat)(col-1, cache);
+				sum += weights.get(col, 0) * dist;
+			} else {
+				sum += weights.get(col, 0) * (*feat)(col-1, cache);
+			}
+		}
+		double res = round(1.0 / (1 + exp(-sum)));
+		//cout << "res: " << res << " " << dist << endl;
+// set second to true if result is not 1.0
+		// which means it will be removed
+		result = (dist > std::get<1>(result)) ? std::make_tuple(pt, dist, i.r, i.c) : result;
+		is_min = is_min && (res != 1.0);
+//		has_found = has_found || (res != 1.0);
+		if (res == 1.0) {
+			*i = std::make_pair(pt, true);
+//			(*i).second = true;
+		}
+	}
+
+//	is_min = !has_found;
+	is_min_r = is_min;
+//	return get<0>(result);
+	return result;
+
 }
 
 template<class T>
-Point<T>* Trainer<T>::merge(Point<T> *p, vector<pair<Point<T> *, double> > &vec) const
+long Trainer<T>::merge(vector<Center<T> > &centers, long current, long begin, long last) const
 {
-	size_t idx = 0;
-	for (auto& pt : vec) {
+#pragma omp declare reduction(ldpmax:std::pair<long,double>:			\
+			      omp_out = omp_in.second > omp_out.second ? omp_in : omp_out ) \
+	initializer (omp_priv=std::make_pair(0, std::numeric_limits<double>::min()))
+	std::pair<long,double> best = std::make_pair(0, std::numeric_limits<double>::min());
+	Point<T>* p = centers[current].getCenter();
+#pragma omp parallel for reduction(ldpmax:best)
+	for (long i = begin; i <= last; i++) {
 		double sum = weights.get(0, 0);
-		double dist;
+		double dist = 0;
+		Point<T>* cen = centers[i].getCenter();
+		auto cache = feat->compute(*cen, *p);
 		for (int col = 1; col < weights.getNumRow(); col++) {
-			double d = ff[col-1](pt.first, p);
+			double d = (*feat)(col-1, cache);
 			if (col == 1) {
 				dist = d;
 			}
 			sum += weights.get(col, 0) * d;
 		}
 		double res = round(1.0 / (1 + exp(-sum)));
-		pt.second = (res == 1) ? dist : -1;
+
+		if (res == 1) {
+			best = best.second > dist ? best : std::make_pair(i, dist);
+		}
 	}
-	auto iter = std::max_element(vec.begin(), vec.end(), [](pair<Point<T>*, double> a, pair<Point<T>*, double> b) {
-			return a.second < b.second;
-		});
-	if (iter != vec.end() && iter->second != -1) {
-		return iter->first;
-	} else {
-		return NULL;
-	}
+	return best.first;
 }
 
 template<class T>
@@ -92,6 +189,15 @@ vector<pair<Point<T>*,Point<T>*> > resize_vec(vector<pair<pair<Point<T>*,Point<T
 	}
 	return data;
 }
+
+struct rng {
+	rng() {
+		srand(0);
+	}
+	int operator()(int n) const {
+		return rand() % n;
+	}
+};
 template<class T>
 	pair<vector<pair<Point<T>*,
 			 Point<T>*
@@ -99,35 +205,77 @@ template<class T>
 	     vector<pair<Point<T>*,
 			 Point<T>*> > > Trainer<T>::get_labels(vector<pair<Point<T>*,Point<T>*> > &vec, double cutoff) const
 {
-	std::vector<pair<pair<Point<T>*,Point<T>*>, double> > buf_pos, buf_neg;
-	random_shuffle(vec.begin(), vec.end());
+
+	auto cmp = [](const pair<Point<T>*,Point<T>*> a, const pair<Point<T>*,Point<T>*> b) {
+		return a.first->get_header().compare(b.first->get_header()) < 0
+		||
+		(a.first->get_header() == b.first->get_header() && a.second->get_header().compare(b.second->get_header()) < 0);
+	};
+	auto scmp = [](const pair<pair<Point<T>*,Point<T>*>,double> a, const pair<pair<Point<T>*,Point<T>*>, double> b) {
+		return a.first.first->get_header().compare(b.first.first->get_header()) < 0
+		||
+		(a.first.first->get_header() == b.first.first->get_header() && a.first.second->get_header().compare(b.first.second->get_header()) < 0);
+	};
+
+	// todo: convert to std::map
+	std::set<pair<pair<Point<T>*,Point<T>*>, double>, decltype(scmp)> buf_pos(scmp), buf_neg(scmp);
+	std::vector<pair<pair<Point<T>*,Point<T>*>, double> > buf_vpos, buf_vneg;
+//	std::sort(vec.begin(), vec.end(), cmp);
+	// cout << "Before Pair: " << vec[0].first->get_header() << ", " << vec[0].second->get_header() << endl;
+	// cout << "Before Pair: " << vec[vec.size()-1].first->get_header() << ", " << vec[vec.size()-1].second->get_header() << endl;
+
+	rng gen;
+	random_shuffle(vec.begin(), vec.end(), gen);
+	// cout << "Pair: " << vec[0].first->get_header() << ", " << vec[0].second->get_header() << endl;
+	// cout << "Pair: " << vec[vec.size()-1].first->get_header() << ", " << vec[vec.size()-1].second->get_header() << endl;
 	vector<double> scores(vec.size());
-#pragma omp parallel for
+	Progress p(vec.size(), "Alignment");
+#pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < vec.size(); i++) {
 		double algn = align(vec[i].first, vec[i].second);
 		bool is_pos = algn >= cutoff;
 #pragma omp critical
 		{
 			scores[i] = algn;
+			p++;
 			if (is_pos) {
-				buf_pos.push_back(make_pair(vec[i], algn));
+				buf_pos.insert(make_pair(vec[i], algn));
+				//cout << vec[i].first->get_header() << " " << vec[i].second->get_header() << " " << algn << endl;
 			} else {
-				buf_neg.push_back(make_pair(vec[i], algn));
+				buf_neg.insert(make_pair(vec[i], algn));
 			}
+
+#ifdef DEBUG
+			cout << vec[i].first->get_header() << " WITH " << vec[i].second->get_header() << " " << algn << endl;
+			#endif
+
 		}
 	}
+	p.end();
 	std::sort(scores.begin(), scores.end());
-	for (double algn : scores) {
-		cout << "alignment: " << algn << endl;
-	}
 	std::cout << "positive=" << buf_pos.size() << " negative=" << buf_neg.size() << endl;
-
+	if (buf_pos.empty() || buf_neg.empty()) {
+		std::cout << "Identity value does not match sampled data: ";
+		if (buf_pos.empty()) {
+			std::cout << "Too many sequences below identity";
+		} else {
+			std::cout << "Too many sequences above identity";
+		}
+		std::cout << std::endl;
+		exit(0);
+	}
 	size_t m_size = std::min(buf_pos.size(), buf_neg.size());
 
 	std::cout << "resizing positive" << std::endl;
-	auto bp = resize_vec(buf_pos, m_size);
+	for (auto p : buf_pos) {
+		buf_vpos.push_back(p);
+	}
+	for (auto p : buf_neg) {
+		buf_vneg.push_back(p);
+	}
+	auto bp = resize_vec(buf_vpos, m_size);
 	std::cout << "resizing negative" << std::endl;
-	auto bn = resize_vec(buf_neg, m_size);
+	auto bn = resize_vec(buf_vneg, m_size);
         auto ret = make_pair(bp, bn);
 	std::cout << "positive=" << ret.first.size() << " negative=" << ret.second.size() << endl;
 	return ret;
@@ -138,8 +286,9 @@ void Trainer<T>::filter(Point<T> *p, vector<pair<Point<T> *, bool> > &vec) const
 {
 	for (auto& pt : vec) {
 		double sum = weights.get(0, 0);
+		auto cache = feat->compute(*pt.first, *p);
 		for (int col = 1; col < weights.getNumRow(); col++) {
-			sum += weights.get(col, 0) * ff[col-1](pt.first, p);
+			sum += weights.get(col, 0) * (*feat)(col-1, cache);
 		}
 		double res = round(1.0 / (1 + exp(-sum)));
 		pt.second = (res != 1);
@@ -165,113 +314,102 @@ Point<T>* Trainer<T>::closest(Point<double> *p, vector<pair<Point<T> *, bool> > 
 	return best_pt;
 }
 
-
-
 template<class T>
-vector<pair<int, double> > Trainer<T>::get_close(Point<T> *p, const vector<pair<Point<T> *, int> > &vec, bool &is_min) const
+std::pair<matrix::Matrix,matrix::Matrix> Trainer<T>::generate_feat_mat(pair<vector<pair<Point<T> *, Point<T> *> >, vector<pair<Point<T> *, Point<T> *> > > &data, int ncols)
 {
-
-	int nrows = vec.size();
-	int ncols = weights.getNumRow();
-	vector<pair<int, double> > close(nrows);
-	vector<double> min_distances(nrows);
+	int nrows = data.first.size() + data.second.size();
+	matrix::Matrix feat_mat(nrows, ncols);
+	matrix::Matrix labels(nrows, 1);
 #pragma omp parallel for
-	for (int row = 0; row < nrows; row++) {
-		double sum = weights.get(0, 0);
-		double dist = 0;
-		for (int col = 1; col < ncols; col++) {
-			if (col == 1) {
-				dist = ff.at(col-1)(vec[row].first, p);
-				sum += weights.get(col, 0) * dist;
+	for (int i = 0; i < data.first.size(); i++) {
+		auto kv = data.first[i];
+		int row = i;
+		auto cache = feat->compute(*kv.first, *kv.second);
+		for (int col = 0; col < ncols; col++) {
+
+			if (col == 0) {
+				feat_mat.set(row, col, 1);
 			} else {
-				sum += weights.get(col, 0) * ff.at(col-1)(vec[row].first, p);
+//				double val = ff[col-1](kv.first, kv.second);
+				////#pragma omp critical
+				double val = (*feat)(col-1, cache);
+				feat_mat.set(row, col, val);
 			}
+
 		}
-		double res = round(1.0 / (1 + exp(-sum)));
-		int idx = res == 1 ? vec[row].second : -1;
-		close[row] = make_pair(idx, dist);
-		min_distances[row] = dist;
+		////#pragma omp critical
+		labels.set(row, 0, 1);
 	}
-	is_min = false;
-	close.erase(std::remove_if(close.begin(), close.end(), [](pair<int,double> p) {
-				return p.first == -1;
-			}), close.end());
-	if (close.empty() && !vec.empty()) {
-		auto iter = std::max_element(min_distances.begin(), min_distances.end());
-		int min_manhattan_idx = std::distance(min_distances.begin(), iter);
-		//	std::cout << "using min: [" << min_manhattan_idx << "] " << min_manhattan << endl;
-		close.push_back(make_pair(vec[min_manhattan_idx].second, 0));
-		is_min = true;
+#pragma omp parallel for
+	for (int i = 0; i < data.second.size(); i++) {
+		auto kv = data.second[i];
+		int row = data.first.size() + i;
+		auto cache = feat->compute(*kv.first, *kv.second);
+		for (int col = 0; col < ncols; col++) {
+
+			if (col == 0) {
+				feat_mat.set(row, col, 1);
+			} else {
+//				double val = ff[col-1](kv.first, kv.second);
+				////#pragma omp critical
+				double val = (*feat)(col-1, cache);
+				feat_mat.set(row, col, val);
+			}
+
+		}
+		////#pragma omp critical
+		labels.set(row, 0, -1);
 	}
-
-	std::sort(close.begin(), close.end(), [](pair<int,double> a, pair<int,double> b) {
-				return a.second > b.second;
-		});
-//	std::cout << "size(): " << close.size() << " " << is_min << std::endl;
-	return close;
-// 	// code: labels = features * weights
-// 	matrix::Matrix feat_mat(nrows, ncols);
-// 	auto begin = clock();
-// #pragma omp parallel for collapse(2)
-// 	for (int row = 0; row < nrows; row++) {
-// 		for (int col = 0; col < ncols; col++) {
-// 			if (col == 0) {
-// 				feat_mat.set(row, col, 1);
-// 			} else {
-// 				double val = ff[col-1](vec[row].first, p);
-// 				feat_mat.set(row, col, val);
-// 			}
-// 		}
-// 	}
-// 	auto end = clock();
-// 	double diff = ((double)end - begin) / CLOCKS_PER_SEC;
-// //	std::cout << "Loop diff: " << diff << endl;
-// 	matrix::Matrix pred = glm.predict(feat_mat);
-
-// //	std::cout << "close to " << p->get_header() << endl;
-// 	for (int row = 0; row < nrows; row++) {
-// 		if (pred.get(row, 0) == 1) {
-// 			//std::cout << vec[row].first->get_header() << endl;
-// 			close.push_back(vec[row].second);
-// 		}
-// 	}
-// 	return close;
+	return std::make_pair(feat_mat, labels);
 }
 template<class T>
 double Trainer<T>::train_n(pair<vector<pair<Point<T> *, Point<T> *> >, vector<pair<Point<T> *, Point<T> *> > > &data, int ncols)
 {
 	std::cout << "done" << endl;
+	cout << "Training on " << ncols << " columns" << endl;
 	int nrows = data.first.size() + data.second.size();
 
 	matrix::Matrix feat_mat(nrows, ncols);
 	matrix::Matrix labels(nrows, 1);
 	double avg_label = 0;
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for
 	for (int i = 0; i < data.first.size(); i++) {
 		auto kv = data.first[i];
 		int row = i;
+		auto cache = feat->compute(*kv.first, *kv.second);
 		for (int col = 0; col < ncols; col++) {
+
 			if (col == 0) {
 				feat_mat.set(row, col, 1);
 			} else {
-				double val = ff[col-1](kv.first, kv.second);
+//				double val = ff[col-1](kv.first, kv.second);
+				////#pragma omp critical
+				double val = (*feat)(col-1, cache);
 				feat_mat.set(row, col, val);
 			}
+
 		}
+		////#pragma omp critical
 		labels.set(row, 0, 1);
 	}
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for
 	for (int i = 0; i < data.second.size(); i++) {
 		auto kv = data.second[i];
 		int row = data.first.size() + i;
+		auto cache = feat->compute(*kv.first, *kv.second);
 		for (int col = 0; col < ncols; col++) {
+
 			if (col == 0) {
 				feat_mat.set(row, col, 1);
 			} else {
-				double val = ff[col-1](kv.first, kv.second);
+//				double val = ff[col-1](kv.first, kv.second);
+				////#pragma omp critical
+				double val = (*feat)(col-1, cache);
 				feat_mat.set(row, col, val);
 			}
+
 		}
+		////#pragma omp critical
 		labels.set(row, 0, -1);
 	}
 	for (int row = 0; row < nrows; row++) {
@@ -283,10 +421,12 @@ double Trainer<T>::train_n(pair<vector<pair<Point<T> *, Point<T> *> >, vector<pa
 	}
 	glm.train(feat_mat, labels);
 	weights = glm.get_weights();
+	#ifdef DEBUG
 	for (int i = 0; i < ncols; i++) {
 		cout << "weight: " << weights.get(i, 0) << endl;
 
 	}
+	#endif
 	matrix::Matrix p = glm.predict(feat_mat);
 	for (int row = 0; row < nrows; row++) {
 		if (p.get(row, 0) == 0) {
@@ -300,50 +440,124 @@ double Trainer<T>::train_n(pair<vector<pair<Point<T> *, Point<T> *> >, vector<pa
 template<class T>
 void Trainer<T>::train(double acc_cutoff)
 {
+	pair<vector<pair<Point<T>*,
+			 Point<T>*
+			 > >,
+	     vector<pair<Point<T>*,
+			 Point<T>*> > > training, testing;
+	if (k != 0) {
 	std::cout << "Splitting data" << endl;
 	auto _data = split();
-	auto data = get_labels(_data, cutoff);
-	if (data.first.empty() || data.second.empty()) {
+// 	std::sort(_data.begin(), _data.end(), [](const pair<Point<T>*,Point<T>*> a, const pair<Point<T>*,Point<T>*> b) {
+// 			return a.first->get_header().compare(b.first->get_header()) < 0
+// ||
+// 										      (a.first->get_header() == b.first->get_header() && a.second->get_header().compare(b.second->get_header()) > 0);
+// 		});
+	auto both = get_labels(_data, cutoff);
+
+	for (int i = 0; i < both.first.size(); i++) {
+		//training.first.push_back(both.first[i]);
+		if (i % 2 == 0) {
+			training.first.push_back(both.first[i]);
+		} else {
+			testing.first.push_back(both.first[i]);
+		}
+	}
+	both.first.clear();
+	for (int i = 0; i < both.second.size(); i++) {
+		if (i % 2 == 0) {
+			training.second.push_back(both.second[i]);
+		} else {
+			testing.second.push_back(both.second[i]);
+		}
+	}
+	both.second.clear();
+	if (testing.first.empty() || testing.second.empty()) {
 		throw "not enough points to sample";
 	}
-	std::cout << "data split, normalizing..." << endl;
-#pragma omp parallel for schedule(dynamic)
-	for (int i = 0; i < sf.size(); i++) {
-		sf[i].normalize(data.first);
-		sf[i].normalize(data.second);
-#pragma omp critical
-		cout << i << ": " << sf[i].max << " " << sf[i].min << endl;
 	}
+	vector<std::pair<uint16_t, uint16_t> > bit_feats;
+	//bit_feats.push_back(std::make_pair(FEAT_ALIGN, COMBO_SELF));
+	int feat_set = 1;
+	if (k == 0) {
+		feat->add_feature(FEAT_ALIGN, COMBO_SELF);
+		feat->normalize(training.first);
+		feat->finalize();
+		weights = matrix::Matrix(2, 1);
+		weights.set(0, 0, -1 * cutoff);
+		weights.set(1, 0, 1);
+		return;
+	} else if (feat_set == 0) {
+		bit_feats.push_back(std::make_pair(FEAT_LD | FEAT_INTERSECTION, COMBO_SELF));
+		bit_feats.push_back(std::make_pair(FEAT_LD | FEAT_JENSONSHANNON, COMBO_SELF));
+		bit_feats.push_back(std::make_pair(FEAT_SIMRATIO, COMBO_SELF));
+		bit_feats.push_back(std::make_pair(FEAT_SQCHORD, COMBO_SELF));
+	} else {
+		bit_feats.push_back(std::make_pair(FEAT_INTERSECTION | FEAT_LD, COMBO_SELF));
+		bit_feats.push_back(std::make_pair(FEAT_MANHATTAN | FEAT_LD, COMBO_SQUARED));
+		bit_feats.push_back(std::make_pair(FEAT_PEARSON, COMBO_SELF));
+		bit_feats.push_back(std::make_pair(FEAT_KULCZYNSKI2 | FEAT_LD, COMBO_SQUARED));
+	}
+// 	std::cout << "data split, normalizing..." << endl;
+// #pragma omp parallel for schedule(dynamic)
+// 	for (int i = 0; i < sf.size(); i++) {
+// 		sf[i].normalize(data.first);
+// 		sf[i].normalize(data.second);
+// 		cout << i << ": " << sf[i].max << " " << sf[i].min << endl;
+// 	}
 	// ff.emplace_back([](vector<double> d) { return d[0] * d[1]; },
 	//   		std::vector<SingleFeature<T> >({sf[2], sf[1]}));
 	// ff.emplace_back([](vector<double> d) { return d[0] * d[0] * d[1] * d[1]; },
 	// 		std::vector<SingleFeature<T> >({sf[0], sf[1]}));
 	// ff.emplace_back([](vector<double> d) { return d[0]; },
 	//  		std::vector<SingleFeature<T> >({sf[3]}));
-	auto prod2 = [](vector<double> d) { return d[0] * d[1]; };
-	auto pself = [](vector<double> d) { return d[0]; };
-	auto prod2sq = [](vector<double> d) { return d[0] * d[1] * d[0] * d[1]; };
-	ff.emplace_back(prod2, std::vector<SingleFeature<T> >({sf[0], sf[1]}));
-	ff.emplace_back(prod2, std::vector<SingleFeature<T> >({sf[0], sf[2]}));
-	ff.emplace_back(pself, std::vector<SingleFeature<T> >({sf[3]}));
-	ff.emplace_back(pself, std::vector<SingleFeature<T> >({sf[4]}));
 
-	double prev_acc = 0;
+	double prev_acc = -10000;
 	vector<matrix::Matrix> matvec;
-	for (size_t i = 0; i < ff.size(); i++) {
-		double acc = train_n(data, i + 2);
-
+	vector<Feature<T> > features;
+	const size_t min_no_features = std::max(1, (int)bit_feats.size()-1);
+	for (size_t num_features = min_no_features; num_features <= bit_feats.size(); num_features++) {
+		for (size_t j = feat->size(); j < num_features && j < bit_feats.size(); j++) {
+			feat->add_feature(bit_feats[j].first, bit_feats[j].second);
+		}
+		feat->normalize(training.first);
+		feat->normalize(training.second);
+		feat->finalize();
+		feat->print_bounds();
+		auto mtraining = generate_feat_mat(training, num_features+1);
+		auto mtesting = generate_feat_mat(testing, num_features+1);
+		glm.train(mtraining.first, mtraining.second);
+		weights = glm.get_weights();
+		matrix::Matrix p = glm.predict(mtesting.first);
+		for (int row = 0; row < testing.first.size() + testing.second.size(); row++) {
+			if (p.get(row, 0) == 0) {
+				p.set(row, 0, -1);
+			}
+		}
+		double acc = get<0>(glm.accuracy(mtesting.second, p));
+		matrix::Matrix q = glm.predict(mtraining.first);
+		for (int row = 0; row < training.first.size() + training.second.size(); row++) {
+			if (q.get(row, 0) == 0) {
+				q.set(row, 0, -1);
+			}
+		}
+		glm.accuracy(mtraining.second, q);
 		if (acc - prev_acc <= 1 && acc >= 90.0) {
 			weights = matvec.back();
+			*feat = features.back();
+			cout << "feat size is " << feat->size() << endl;
 			break;
 		}
 		matvec.push_back(weights);
+		features.push_back(*feat);
 		prev_acc = acc;
 		if (acc >= acc_cutoff) {
+			cout << "breaking from acc cutoff" << endl;
 			break;
 		}
 	}
-	cout << "Using " << weights.getNumRow()-1 << " features " << endl;
+	cout << "Final: feat size is " << feat->size() << endl;
+	cout << "Using " << weights.getNumRow()-1 << " features " << __DATE__ << endl;
 }
 
 template<class T>
@@ -351,13 +565,23 @@ vector<pair<Point<T>*, Point<T>*> > Trainer<T>::split()
 {
 	// n_points total per side
 	// max_pts_from_one on each side
-	vector<pair<Point<T>*, Point<T>*> > pairs;
+	auto cmp = [](const pair<Point<T>*,Point<T>*> a, const pair<Point<T>*,Point<T>*> b) {
+			return a.first->get_header().compare(b.first->get_header()) < 0
+||
+										      (a.first->get_header() == b.first->get_header() && a.second->get_header().compare(b.second->get_header()) < 0);
+	};
+        set<pair<Point<T>*, Point<T>*>, decltype(cmp)> pairs(cmp);
+//	vector<pair<Point<T>*, Point<T>*> > pairs;
 	const size_t total_num_pairs = n_points * 2;
-
+	int aerr = 0;
 	int bandwidth = (1.0 - cutoff) * 10000;
-	cout << "bandwidth: " << bandwidth << endl;
 	vector<Point<T>*> indices;
-	Point<T> *begin_pt = points[0];
+	std::sort(points.begin(), points.end(), [](const Point<T>* a,
+						   const Point<T>* b) -> bool {
+			  return a->get_length() < b->get_length();
+			  });
+	Point<T> *begin_pt = points[points.size()/2];
+
 	std::sort(points.begin(), points.end(), [&](const Point<T>* a,
 							    const Point<T>* b) -> bool {
 				  return a->distance(*begin_pt) < b->distance(*begin_pt);
@@ -369,12 +593,13 @@ vector<pair<Point<T>*, Point<T>*> > Trainer<T>::split()
 	}
 	cout << "Point pairs: " << indices.size() << endl;
 	size_t to_add_each = max_pts_from_one / 2;
+	Progress prog(indices.size(), "Sorting data");
 #pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < indices.size(); i++) {
 		vector<Point<T>*> pts = points;
 		Point<T>* p = indices[i];
 		std::sort(pts.begin(), pts.end(), [&](const Point<T>* a,
-							    const Point<T>* b) {
+						      const Point<T>* b) {
 				  return a->distance(*p) < b->distance(*p);
 			  });
 		// do binary search with alignment
@@ -402,35 +627,62 @@ vector<pair<Point<T>*, Point<T>*> > Trainer<T>::split()
 		// after: [pivot, size) size: to_add_each
 		double before_inc = (double)pivot / to_add_each;
 		double after_inc = ((double)(pts.size() - pivot)) / to_add_each;
-		if (before_inc < 1) {
-			cerr << "Too large similarity" << endl;
-		} else if (after_inc < 1) {
-			cerr << "Too small similarity" << endl;
+#pragma omp critical
+		{
+			prog++;
+			if (before_inc < 1) {
+				aerr = 1;
+			} else if (after_inc < 1) {
+				aerr = -1;
+			}
 		}
 		double before_start = 0;
 		double after_start = pivot;
 		double top_start = 0;
 		size_t size_before = pairs.size();
 		vector<pair<Point<T>*,Point<T>*> > buf;
+		// Adds points above cutoff by adding before_inc
 		for (int i = 0; i < to_add_each; i++) {
 			int idx = round(before_start);
 			int dist = pts[idx]->distance(*p);
 			//	cout << p->get_header() << " " << pts[idx]->get_header() << " " << dist << endl;
-			buf.push_back(make_pair(p, pts[idx]));
+			auto pr = p->get_header().compare(pts[idx]->get_header()) < 0 ? make_pair(p, pts[idx]) : make_pair(pts[idx], p);
+			buf.push_back(pr);
 			before_start += before_inc;
 		}
+		// Adds points before cutoff by adding after_inc
 		for (int i = 0; i < to_add_each && round(after_start) < pts.size(); i++) {
 			int idx = round(after_start);
 			int dist = pts[idx]->distance(*p);
 			//		cout << p->get_header() << " " << pts[idx]->get_header() << " " << dist << endl;
-			buf.push_back(make_pair(p, pts[idx]));
+			auto pr = p->get_header().compare(pts[idx]->get_header()) < 0 ? make_pair(p, pts[idx]) : make_pair(pts[idx], p);
+			buf.push_back(pr);
 			after_start += after_inc;
 		}
 #pragma omp critical
-		pairs.insert(std::end(pairs), std::begin(buf), std::end(buf));
+		{
+			// Adds buffer to total pairs
+		// 	for (auto p : buf) {
+// 				pairs.push_back(p);
+// 			}
+			pairs.insert(std::begin(buf), std::end(buf));
+		}
 //			cout << "added " << pairs.size() - size_before << " pairs" << endl;
 	}
-	return pairs;
+	prog.end();
+	if (aerr < 0) {
+		cerr << "Warning: Alignment may be too small for sampling" << endl;
+	} else if (aerr > 0) {
+		cerr << "Warning: Alignment may be too large for sampling" << endl;
+	}
+	int i = 0;
+	for (auto a : pairs) {
+		cout << "Before Pair: " << a.first->get_header() << ", " << a.second->get_header() << endl;
+		if (++i == 4) {
+			break;
+		}
+	}
+	return std::vector<std::pair<Point<T>*,Point<T>*> >(pairs.begin(), pairs.end());
 }
 template<class T>
 std::pair<std::map<std::pair<Point<T>*, Point<T>*>, double>,
@@ -589,69 +841,27 @@ void Trainer<T>::init(double (&matrix)[4][4], double sig, double eps)
 	// sf.emplace_back([](Point<T>* a, Point<T> *b) {
 	// 		return Feature<T>::rree_k_r(*a, *b);
 	// 	}, false);
-	sf.emplace_back([](Point<T>* a, Point<T>* b) {
-			return Feature<T>::length_difference(*a, *b);
-		}, false);
-	sf.emplace_back([](Point<T>* a, Point<T>* b) {
-			return Feature<T>::intersection(*a, *b);
-		}, true);
-	sf.emplace_back([](Point<T>* a, Point<T>* b) {
-			return Feature<T>::jenson_shannon(*a, *b);
-		}, false);
-	sf.emplace_back([](Point<T>* a, Point<T>* b) {
-			return Feature<T>::simratio(*a, *b);
-		}, true);
-	sf.emplace_back([](Point<T>* a, Point<T>* b) {
-			return Feature<T>::squaredchord(*a, *b);
-		}, false);
+	// sf.emplace_back([](Point<T>* a, Point<T>* b) {
+	// 		return Feature<T>::length_difference(*a, *b);
+	// 	}, false);
+	// sf.emplace_back([](Point<T>* a, Point<T>* b) {
+	// 		return Feature<T>::intersection(*a, *b);
+	// 	}, true);
+	// sf.emplace_back([](Point<T>* a, Point<T>* b) {
+	// 		return Feature<T>::jenson_shannon(*a, *b);
+	// 	}, false);
+	// sf.emplace_back([](Point<T>* a, Point<T>* b) {
+	// 		return Feature<T>::simratio(*a, *b);
+	// 	}, true);
+	// sf.emplace_back([](Point<T>* a, Point<T>* b) {
+	// 		return Feature<T>::squaredchord(*a, *b);
+	// 	}, false);
 	// sf.emplace_back([](Point<T>* a, Point<T>* b) {
 	// 		return Feature<T>::manhattan(*a, *b);
 	// 	}, false);
 	// sf.emplace_back([](Point<T>* a, Point<T>* b) {
 	// 		return Feature<T>::pearson(*a, *b);
 	// 	}, true);
-	return;
-	int four_k = pow(4, k);
-	vector<int> reverse;
-	vector<int> reverse_complement;
-	auto freverse = [](int idx, int k) {
-		int sum = 0;
-		for (int i = 0; i < k; i++) {
-			int rem = idx % 4;
-			idx /= 4;
-			sum = 4 * sum + rem;
-
-		}
-		return sum;
-	};
-	auto freverse_complement = [](int idx, int k) {
-		std::vector<int> v;
-		for (int i = 0; i < k; i++) {
-			v.push_back(3 - idx % 4);
-			idx /= 4;
-		}
-		int sum = 0;
-		for (auto val : v) {
-			sum = 4 * sum + val;
-		}
-		return sum;
-	};
-	auto print_index = [](int idx, int k) {
-		for (int i = 0; i < k; i++) {
-			int num = idx % 4;
-			idx /= 4;
-			cout << num;
-		}
-		cout << endl;
-	};
-	for (int i = 0; i < four_k; i++) {
-		reverse.push_back(freverse(i, k));
-		reverse_complement.push_back(freverse_complement(i, k));
-	}
-	cout << "After computing: size: " << reverse.size() << " " << reverse_complement.size() << endl;
-	sf.emplace_back([](Point<T>* a, Point<T> *b, const vector<int>& c, const vector<int> &d) {
-			return Feature<T>::n2rrc(*a, *b, c, d);
-				}, reverse, reverse_complement, true);
 
 }
 template class Trainer<uint8_t>;

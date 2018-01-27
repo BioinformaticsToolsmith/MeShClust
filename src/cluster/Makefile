@@ -1,11 +1,12 @@
 TARGET ?= meshclust
+VERSION ?= 1.0.0
 CXX ?= g++
 ifeq ($(debug),yes)
-	CXXFLAGS += -ggdb
+	CXXFLAGS += -ggdb -DDEBUG -fno-omit-frame-pointer -fopenmp
 else
-	CXXFLAGS += -O3 -march=native
+	CXXFLAGS += -fopenmp -O3 -march=native -g
 endif
-CXXFLAGS += -fopenmp -std=c++11
+CXXFLAGS += -std=c++11 -DVERSION=\"$(VERSION)\"
 LDFLAGS += -lm
 
 SOURCES := $(shell find ./src -name '*.cpp')

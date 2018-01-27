@@ -113,7 +113,7 @@ double needleman_wunsch::identity(std::pair<std::string, std::string> alignment)
 			count++;
 		}
 	}
-	return (double)count / len;
+	return 1.0 * count / len;
 }
 
 int needleman_wunsch::gap(int gaplen) const
@@ -121,39 +121,12 @@ int needleman_wunsch::gap(int gaplen) const
 	return sigma + (gaplen - 1) * epsilon;
 }
 
-int transform(char a)
-{
-	int ret = -1;
-	switch (a) {
-	case 'a':
-	case 'A':
-		ret = 0;
-		break;
-	case 'c':
-	case 'C':
-		ret = 1;
-		break;
-	case 'g':
-	case 'G':
-		ret = 2;
-		break;
-	case 't':
-	case 'T':
-		ret = 3;
-		break;
-	default:
-		ret = a;
-		break;
-	}
-	return ret;
-}
 int needleman_wunsch::match_score(char a, char b) const
 {
-        int ta = transform(a);
-	int tb = transform(b);
-	return scoring_matrix[ta][tb];
+	return a == b ? match : mismatch;
 }
-needleman_wunsch::needleman_wunsch(const std::string &s1_, const std::string& s2_, const int m[4][4], int sigma_, int epsilon_)
+
+needleman_wunsch::needleman_wunsch(const std::string &s1_, const std::string& s2_, int match_, int mismatch_, int sigma_, int epsilon_)
 {
 	int l1_ = s1_.length();
 	int l2_ = s2_.length();
@@ -168,13 +141,10 @@ needleman_wunsch::needleman_wunsch(const std::string &s1_, const std::string& s2
 		s1 = s2_;
 		s2 = s1_;
 	}
-	sigma = sigma_;
-	epsilon = epsilon_;
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			scoring_matrix[i][j] = (int)m[i][j];
-		}
-	}
+	sigma = -sigma_;
+	epsilon = -epsilon_;
+	match = match_;
+	mismatch = mismatch_;
 	int matlen = l1 * l2;
 	score = new int[matlen];
 	direction = new uint8_t[matlen];

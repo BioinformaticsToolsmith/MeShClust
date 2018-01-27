@@ -200,6 +200,10 @@ void KmerHashTable<I, V>::wholesaleIncrement(const char* sequence,
 	int size = hashList.size();
 	for (int i = 0; i < size; i++) {
 		I keyHash = hashList.at(i);
+		if (keyHash >= maxTableSize) {
+			cerr << "array out of bounds" << endl;
+			throw "";
+		}
 		values[keyHash]++;
 	}
 
@@ -337,7 +341,7 @@ I KmerHashTable<I, V>::countNonInitialEntries() {
  * Make a list of the k-mers.
  */
 template<class I, class V>
-void KmerHashTable<I, V>::getKeys(vector<const char *>& keys) {
+vector<string>* KmerHashTable<I, V>::getKeys() {
 	vector<char> * alpha = new vector<char>();
 	alpha->push_back((char) 0);
 	alpha->push_back((char) 1);
@@ -368,14 +372,10 @@ void KmerHashTable<I, V>::getKeys(vector<const char *>& keys) {
 		delete wordsAtItrI;
 	}
 
-	// Change the type of the elements
-	for (I j = 0; j < words->size(); j++) {
-		keys.push_back(words->at(j).c_str());
-	}
-
 	// Free memory
 	alpha->clear();
 	delete alpha;
+	return words;
 }
 
 /**
@@ -384,7 +384,7 @@ void KmerHashTable<I, V>::getKeys(vector<const char *>& keys) {
 template<class I, class V>
 void KmerHashTable<I, V>::printTable(string output) {
 	vector<const char *> keys;
-	getKeys(keys);
+//	getKeys(keys);
 
 	ofstream out(output.c_str());
 
@@ -443,4 +443,3 @@ V KmerHashTable<I, V>::getMaxValue() {
 	}
 	return max;
 }
-

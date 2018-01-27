@@ -33,6 +33,7 @@ public:
 		auto d = new DivergencePoint(points, to_delete);
 		d->set_header(Point<T>::get_header());
 		d->set_id(get_id());
+		d->set_length(get_length());
 		return d;
 	}
 	DivergencePoint* create() const {

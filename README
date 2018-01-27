@@ -1,5 +1,5 @@
 MeShClust
-Beta version
+Release version
 
 Requirements: g++ 4.9.1 or later, requires Homebrew on Mac OS X
 
@@ -12,14 +12,34 @@ see: https://stackoverflow.com/questions/29057437/compile-openmp-programs-with-g
 Linux/Unix compilation:
 make
 
-Usage: bin/meshclust *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20]
+Usage: bin/meshclust *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20] [--align] [--sample 1500] [--pivot 40] [--threads TMAX]
 
 The most important parameter, --id, controls the identity of the sequences.
+    If the identity is below 60%, alignment is automatically used instead of k-mer measures.
+    However, alignment can be forced with the --align parameter.
 
---kmer decides the size of the kmers. Increasing kmer size can increase accuracy, but increases memory consumption fourfold.
+--kmer decides the size of the kmers. It is by default automatically decided by average sequence length,
+       but if provided, MeShClust can speed up a little by not having to find the largest sequence length.
+       Increasing kmer size can increase accuracy, but increases memory consumption fourfold.
 
---delta decides how many clusters are looked around in the final clustering stage, increasing it creates more accuracy, but takes more time.
+--delta decides how many clusters are looked around in the final clustering stage.
+	Increasing it creates more accuracy, but takes more time.
 
 --output specifies the output file, in CD-HIT's CLSTR format
 
 --iterations specifies how many iterations in the final stage of merging are done until convergence.
+
+--align forces alignment to be used, which can be much slower than k-mer features, but is
+	more accurate than using k-mer features to guess alignment.
+
+--threads sets the number of threads to be used. By default OpenMP uses the number of available cores
+	  on your machine, but this parameter overwrites that.
+
+--sample selects the total number of sample pairs of sequences used for both training and testing.
+	 1500 is the default value.
+
+--pivot selects the maximum number of pairs selected from one pivot sequence. Increasing this means
+	less pivots are available, but more pairs are selected for one sequence, which can lead to
+	higher training accuracy. The default value is 40.
+
+If the argument is not listed here, it is interpreted as an input file.

@@ -12,7 +12,7 @@
 
 class needleman_wunsch {
 public:
-	needleman_wunsch(const std::string& s1, const std::string& s2, const int matrix_[4][4], int sigma_, int epsilon_);
+	needleman_wunsch(const std::string& s1, const std::string& s2, int match_,  int mismatch_, int sigma_, int epsilon_);
 	~needleman_wunsch() {
 		delete[] score;
 		delete[] direction;
@@ -28,7 +28,7 @@ private:
 	inline int at(int a, int b) const { return a * l2 + b; };
 	void fill(int,int);
 	std::pair<std::string, std::string> backtrack();
-	int scoring_matrix[4][4];
+	int match, mismatch;
 	int sigma, epsilon;
 	std::string s1, s2;
 	int l1, l2;

@@ -5,41 +5,101 @@
  * Author: Benjamin T James
  */
 #include <vector>
+#include <algorithm>
 #include <cmath>
 #include <sys/stat.h>
 #include <cstdlib>
 #include "../../nonltr/ChromListMaker.h"
+#include "../../utility/AffineId.h"
 #include "Runner.h"
 #include "Trainer.h"
 #include "ClusterFactory.h"
-#include "ConcreteMeanShift.h"
-#include "MeanShiftContext.h"
+#include "bvec.h"
+#include "Progress.h"
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 Runner::Runner(int argc, char **argv)
 {
 	get_opts(argc, argv);
-	auto pr = find_k();
-	longest_length = pr.second;
 	if (k == -1) {
+		auto pr = find_k();
 		k = pr.first;
 	}
-	compute_bandwidth();
-	srand(time(NULL));
+	if (similarity < 0.6) {
+		align = true;
+	}
+	if (sample_size == 0) {
+		sample_size = 1500;
+	}
+	srand(10);
 }
 
-int Runner::run() const
+int Runner::run()
 {
-	if (longest_length <= std::numeric_limits<uint8_t>::max()) {
+	largest_count = 0;
+	Progress progress(files.size(), "Reading in sequences");
+	for (auto i = 0; i < files.size(); i++) {
+		auto f = files.at(i);
+		ChromListMaker maker(f);
+		auto chromList = maker.makeChromOneDigitList();
+
+		progress++;
+//		cout << "Reading in sequences from " << f << "..." << endl;
+		uint64_t local_largest_count = 0;
+#pragma omp parallel for reduction(max:local_largest_count)
+	        for (int i = 0; i < chromList->size(); i++) {
+			std::vector<uint64_t> values;
+			KmerHashTable<unsigned long, uint64_t> table(k, 1);
+			ChromosomeOneDigit *chrom = dynamic_cast<ChromosomeOneDigit *>(chromList->at(i));
+			fill_table<uint64_t>(table, chrom, values);
+			uint64_t l_count = *std::max_element(values.begin(), values.end());
+			if (l_count > local_largest_count) {
+				local_largest_count = l_count;
+			}
+		}
+		if (local_largest_count > largest_count) {
+			largest_count = local_largest_count;
+		}
+	}
+	progress.end();
+
+
+	if (largest_count <= std::numeric_limits<uint8_t>::max()) {
+		cout << "Using 8 bit histograms" << endl;
 		return do_run<uint8_t>();
-	} else if (longest_length <= std::numeric_limits<uint16_t>::max()) {
+	} else if (largest_count <= std::numeric_limits<uint16_t>::max()) {
+		cout << "Using 16 bit histograms" << endl;
 		return do_run<uint16_t>();
-	} else if (longest_length <= std::numeric_limits<uint32_t>::max()){
+	} else if (largest_count <= std::numeric_limits<uint32_t>::max()){
+	       	cout << "Using 32 bit histograms" << endl;
 		return do_run<uint32_t>();
-	} else if (longest_length <= std::numeric_limits<uint64_t>::max()) {
+	} else if (largest_count <= std::numeric_limits<uint64_t>::max()) {
+	       	cout << "Using 64 bit histograms" << endl;
 		return do_run<uint64_t>();
 	} else {
 		throw "Too big sequence";
 	}
 }
+
+void usage(std::string progname)
+{
+	std::cout << "Usage: " << progname << " *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20] [--align] [--sample 1500] [--pivot 40] [--threads TMAX]" << std::endl << std::endl;
+	#ifndef VERSION
+        #define VERSION "(undefined)"
+        #endif
+        std::cout << "Version " << VERSION << " compiled on " << __DATE__ << " " << __TIME__;
+        #ifdef _OPENMP
+        std::cout << " with OpenMP " << _OPENMP;
+        #else
+        std::cout << " without OpenMP";
+        #endif
+	std::cout << std::endl;
+
+
+}
+
+
 void Runner::get_opts(int argc, char **argv)
 {
 	for (int i = 1; i < argc; i++) {
@@ -55,7 +115,6 @@ void Runner::get_opts(int argc, char **argv)
 				cerr << "Similarity must be between 0 and 1" << endl;
 				exit(EXIT_FAILURE);
 			}
-			similarity *= 100;
 			i++;
 		} else if ((arg == "-k" || arg == "--kmer") && i + 1 < argc) {
 			k = strtol(argv[i+1], NULL, 10);
@@ -70,6 +129,28 @@ void Runner::get_opts(int argc, char **argv)
 		} else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
 			output = string(argv[i+1]);
 			i++;
+		} else if (arg == "-a" || arg == "--align") {
+			align = true;
+		} else if ((arg == "-s" || arg == "--sample") && i + 1 < argc) {
+			sample_size = strtol(argv[i+1], NULL, 10);
+			if (errno) {
+				perror(argv[i+1]);
+				exit(EXIT_FAILURE);
+			} else if (sample_size <= 0) {
+				fprintf(stderr, "Sample size must be greater than 0.\n");
+				exit(EXIT_FAILURE);
+			}
+			i++;
+		} else if ((arg == "-p" || arg == "--pivot") && i + 1 < argc) {
+			pivots = strtol(argv[i+1], NULL, 10);
+			if (errno) {
+				perror(argv[i+1]);
+				exit(EXIT_FAILURE);
+			} else if (sample_size <= 0) {
+				fprintf(stderr, "Points per pivot must be greater than 0.\n");
+				exit(EXIT_FAILURE);
+			}
+			i++;
 		} else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
 			try {
 				std::string opt = argv[i+1];
@@ -77,12 +158,15 @@ void Runner::get_opts(int argc, char **argv)
 				if (threads <= 0) {
 					throw std::invalid_argument("");
 				}
+				#ifdef _OPENMP
+				omp_set_num_threads(threads);
+				#endif
 			} catch (std::exception e) {
 				cerr << "Number of threads must be greater than 0." << endl;
 				exit(1);
 			}
 
-
+			i++;
 
 		} else if ((arg == "-d" || arg == "--delta") && i + 1 < argc) {
 			delta = strtol(argv[i+1], NULL, 10);
@@ -94,7 +178,7 @@ void Runner::get_opts(int argc, char **argv)
 				exit(EXIT_FAILURE);
 			}
 			i++;
-		} else if ((arg == "-t" || arg == "--iter" || arg == "--iterations") && i + 1 < argc) {
+		} else if ((arg == "-i" || arg == "--iter" || arg == "--iterations") && i + 1 < argc) {
 			iterations = strtol(argv[i+1], NULL, 10);
 			if (errno) {
 				perror(argv[i+1]);
@@ -110,21 +194,22 @@ void Runner::get_opts(int argc, char **argv)
 			if (S_ISREG(st.st_mode)) {
 				files.push_back(argv[i]);
 			} else {
-				cerr << "Usage: " << *argv << " *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20]" << endl;
+				usage(*argv);
 				exit(EXIT_FAILURE);
 			}
 		}
 	}
 	if (files.empty()) {
-		cerr << "Usage: " << *argv << " *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20]" << endl;
+		usage(*argv);
 		exit(EXIT_FAILURE);
 	}
 }
 
-pair<int,uint64_t> Runner::find_k() const
+pair<int,uint64_t> Runner::find_k()
 {
-	unsigned long long count = 0, length = 0;
+	unsigned long long count = 0, length = 0, largest_count = 0;
         uint64_t longest_seq = 0;
+	uintmax_t num_sequences = 0;
 	for (auto f : files) {
 		ChromListMaker maker(f);
 		auto chromList = maker.makeChromOneDigitList();
@@ -136,39 +221,19 @@ pair<int,uint64_t> Runner::find_k() const
 			if (sz > longest_seq) {
 				longest_seq = sz;
 			}
+			num_sequences++;
 
 		}
 		l /= chromList->size();
 		length += l;
 	}
 	length /= files.size();
-
 	int newk = ceil(log(length) / log(4)) - 1;
 	cout << "avg length: " << length << endl;
 	cout << "Recommended K: " << newk << endl;
 	return make_pair(newk, longest_seq);
 }
 
-void Runner::compute_bandwidth()
-{
-	map<int, int> table;
-	similarity /= 100;
-	//similarity -= 0.05;
-	// table[5] = round(similarity * -905.48 + 912.38);
-	// table[4] = round(similarity * -623.78 + 628.58);
-	// table[3] = round(similarity * -364.6  + 367.98);
-	// table[2] = round(similarity * -221.41 + 222.31);
-	// table[1] = round(similarity * -140.58 + 140.48);
-	// for (auto kv : table) {
-	// 	cout << "K: " << kv.first << " V: " << kv.second << endl;
-	// }
-	//k = min(5, k);
-	cout << "From similarity " << similarity << endl;
-//	int ret = table[k];
-	int ret = (1.0 - similarity) * 10000;
-	cout << "Using bandwidth " << ret << endl;
-	bandwidth = ret;
-}
 
 double global_mat[4][4] = {{1, -1, -1, -1},
 			   {-1, 1, -1, -1},
@@ -176,24 +241,77 @@ double global_mat[4][4] = {{1, -1, -1, -1},
 			   {-1, -1, -1, 1}};
 double global_sigma = -2;
 double global_epsilon = -1;
+
+void test()
+{
+	std::vector<
+		std::pair<std::string,
+			  std::string> > aligns = {
+		{"GATCTCAG","GACAG"},
+		{"GACAG","GATCAG"},
+		{"GGAACCTT", "GGCCAATT"},
+		{"GATCCATTACCG", "GATATTACCTT"},
+		{"AGATGGTGCACGAACCGCGATTTGATGAATAACCTATTCGAACAGATTCCACCCCGTACTTAGATTCCACGGTAACAGTG",
+		 "AGATGGTgaCggacccaTTTaagAATtAACCTAcTCGacAGAtTCCAcCtCCGtctaGATTCCACGGTacAaagTGAAGG"}
+	};
+	for (auto pr : aligns) {
+		AffineId aid(pr.first.c_str(), 0, pr.first.length()-1,
+			     pr.second.c_str(), 0, pr.second.length()-1);
+		cout << aid.getAlign() << endl;
+	}
+	//exit(0);
+}
 template<class T>
-int Runner::do_run() const
+int Runner::do_run()
 {
 	using pvec = vector<Point<T> *>;
 	using pmap = map<Point<T>*, pvec*>;
-	try {
-		ClusterFactory<T> factory(k);
-		auto points = factory.build_points(files, [&](nonltr::ChromosomeOneDigit *p){ return factory.get_divergence_point(p); });
-		Trainer<T> tr(points, 1000, similarity, 40, global_mat, global_sigma, global_epsilon, k);
-		tr.train();
-		factory.MS(points, bandwidth, similarity, tr, output, iterations, delta);
-		return 0;
-	} catch (std::exception e) {
-		std::cerr << e.what() << endl;
-		return 1;
+
+	ClusterFactory<T> factory(k);
+	auto points = factory.build_points(files, [&](nonltr::ChromosomeOneDigit *p){ return factory.get_divergence_point(p); });
+	Trainer<T> tr(points, sample_size, largest_count, similarity, pivots, global_mat, global_sigma, global_epsilon, align ? 0 : k);
+	tr.train();
+	vector<uint64_t> lengths;
+	for (Point<T>* p : points) {
+		if (!align) {
+			p->set_data_str("");
+		}
+		lengths.push_back(p->get_length());
 	}
-	// factory.MS(points, bandwidth, similarity, output, iterations, delta);
-	// return 0;
+	// Initializing BVec
+	bvec<T> bv(lengths, 1000);
+	lengths.clear();
+	// Inserting points into BVec
+	uint64_t idx = 0;
+	for (Point<T>* p : points) {
+		p->set_id(idx++);
+		bv.insert(p);
+	}
+	bv.insert_finalize();
+//	cout << "bv size: " << bv.report() << endl;
+	// Point<T>* mid = points[points.size()/2];
+	// auto rng = bv.get_range(mid->get_length() * 0.99,
+	// 			mid->get_length() / 0.99);
+	// auto begin = bv.iter(rng.first);
+	// auto end = bv.iter(rng.second);
+	// size_t before = bv.report();
+	// for (int i = 0; i < 1; i++) {
+	// 		bool is_min = false;
+	// 		Point<T>* p = tr.get_close(mid, begin, end, is_min);
+	// 		size_t after = bv.report();
+	// 		if (is_min) {
+	// 			string expr = (after + 1 == before) ? "true" : "false";
+	// 			if (expr == "false") {
+	// 				throw expr;
+	// 			}
+	// 			cout << expr << endl;
+	// 			cout << "is min" << endl;
+	// 		} else {
+	// 			cout << "is not min" << endl;
+	// 		}
+	// }
+	factory.MS(bv, bandwidth, similarity, tr, output, iterations, delta);
+	return 0;
 }
 
 

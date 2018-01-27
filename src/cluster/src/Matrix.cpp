@@ -71,7 +71,7 @@ Matrix Matrix::operator*(Matrix n) {
 	if (numCol == n.numRow) {
 		double curSum = 0;
 		Matrix mat = Matrix(numRow, n.numCol);
-#pragma omp parallel for collapse(2)
+////#pragma omp parallel for collapse(2)
 		for (int i = 0; i < mat.numRow; i++) {
 			for (int j = 0; j < mat.numCol; j++) {
 				curSum = 0;

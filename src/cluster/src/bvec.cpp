@@ -13,7 +13,7 @@ bvec<T>::bvec(vector<uint64_t>& lengths, uint64_t bin_size)
 	std::sort(std::begin(lengths), std::end(lengths));
 	for (uint64_t i = 0; i < lengths.size(); i += bin_size) {
 		begin_bounds.push_back(lengths[i]);
-		uint64_t last_index = std::min(lengths.size() - 1,
+		uint64_t last_index = std::min((uint64_t)lengths.size() - 1,
 					       i + bin_size - 1);
 		end_bounds.push_back(lengths[last_index]);
 		//std::cout << "[" << i << " " << last_index << "]" << std::endl;

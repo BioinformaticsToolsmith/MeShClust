@@ -1,7 +1,7 @@
 # CXX = /usr/bin/c++
 CXX ?= g++
 
-CXXFLAGS =	-O3 -g -fmessage-length=0 -Wall -march=native
+CXXFLAGS =	-O3 -g -fmessage-length=0 -Wall -march=native -std=c++11
 
 #
 # Objects

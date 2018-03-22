@@ -42,10 +42,10 @@ std::tuple<Point<T>*,double,size_t,size_t> Trainer<T>::get_close(Point<T> *p, bv
 	std::tuple<Point<T>*,
 		   double,
 		   size_t,
-		   size_t> result = {NULL,
+		   size_t> result = std::tuple<Point<T>*, double, size_t, size_t>(NULL,
 				     -1,
 				     0,
-				     0};
+				     0);
 	bool has_found = false;
 
 	#ifdef DEBUG

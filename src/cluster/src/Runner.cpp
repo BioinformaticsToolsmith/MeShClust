@@ -273,9 +273,9 @@ int Runner::do_run()
 	tr.train();
 	vector<uint64_t> lengths;
 	for (Point<T>* p : points) {
-		if (!align) {
-			p->set_data_str("");
-		}
+		// if (!align) {
+		// 	p->set_data_str("");
+		// }
 		lengths.push_back(p->get_length());
 	}
 	// Initializing BVec

@@ -2,7 +2,7 @@ TARGET ?= meshclust
 VERSION ?= 1.0.0
 CXX ?= g++
 ifeq ($(debug),yes)
-	CXXFLAGS += -ggdb -DDEBUG -fno-omit-frame-pointer -fopenmp
+	CXXFLAGS += -ggdb  -fopenmp
 else
 	CXXFLAGS += -fopenmp -O3 -march=native -g
 endif

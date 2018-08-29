@@ -327,6 +327,7 @@ void mean_shift_update(vector<Center<T> > &part, int j, const Trainer<T>& trn, i
 		// }
 		if (next != NULL) {
 			center->set(*next);
+			center->set_data_str(next->get_data_str());
 		} else {
 			cerr << "mean shift: NULL" << endl;
 		}

@@ -280,15 +280,17 @@ double Feature<T>::pearson(Point<T> &a, Point<T> &b)
 	double daq = (double)q.getPseudoMagnitude() / N;
 	int ap = round(dap);
 	int aq = round(daq);
-	int dot = 0, np = 0, nq = 0;
+	intmax_t dot = 0;
+	intmax_t np = 0, nq = 0;
 	for (int i = 0; i < N; i++) {
-	        auto dp = p.points[i] - ap;
-	        auto dq = q.points[i] - aq;
+	        intmax_t dp = p.points[i] - ap;
+	        intmax_t dq = q.points[i] - aq;
 		np += dp * dp;
 		nq += dq * dq;
 		dot += dp * dq;
 	}
-	return dot / sqrt(np * nq);
+	double prod = np * nq;
+	return dot / sqrt(std::max(0.5, prod));
 }
 
 template<class T>

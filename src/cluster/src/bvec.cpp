@@ -15,7 +15,6 @@ bvec<T>::bvec(vector<uint64_t>& lengths, uint64_t bin_size)
 		begin_bounds.push_back(lengths[i]);
 		uint64_t last_index = std::min((uint64_t)lengths.size() - 1,
 					       i + bin_size - 1);
-		end_bounds.push_back(lengths[last_index]);
 		//std::cout << "[" << i << " " << last_index << "]" << std::endl;
 	}
 	data.reserve(begin_bounds.size());
@@ -123,19 +122,47 @@ bool bvec<T>::inner_index_of(uint64_t length, size_t &idx, size_t *pfront, size_
 template<class T>
 bool bvec<T>::index_of(uint64_t point, size_t* pfront, size_t* pback) const
 {
+	if (pfront) {
+		size_t low = 0;
+		for (size_t i = 0; i < begin_bounds.size(); i++) {
+			if (begin_bounds[i] <= point) {
+				low = i;
+			}
+		}
+		*pfront = low;
+	}
+	if (pback) {
+		size_t high = begin_bounds.size() - 1;
+		for (int j = begin_bounds.size() - 1; j >= 0; j--) {
+			if (begin_bounds[j] >= point) {
+				high = j;
+			}
+		}
+		*pback = high;
+	}
+	return true;
+
+
+
+
+
+
+
+
+
+
+
 	size_t front = 0, back = 0;
         intmax_t low = 0, high = begin_bounds.size() - 1;
 	bool found = false;
 	if (point < begin_bounds[low] && pfront != NULL) {
-
 		while (data[low].empty() && (low + 1) < data.size()) {
 			low++;
 		}
 		*pfront = low;
 		return true;
 	}
-	if (point > begin_bounds[high] && pback != NULL) {
-
+	if (point >= begin_bounds[high] && pback != NULL) {
 		while (data[high].empty() && high > 0) {
 			high--;
 		}
@@ -144,14 +171,18 @@ bool bvec<T>::index_of(uint64_t point, size_t* pfront, size_t* pback) const
 	}
 	for (;low <= high;) {
 		size_t mid = (low + high) / 2;
-		if (begin_bounds.at(mid) <= point && end_bounds.at(mid) >= point) {
+		uint64_t next_bound = std::numeric_limits<uint64_t>::max();
+		if (mid + 1 < begin_bounds.size()) {
+			next_bound = begin_bounds.at(mid + 1);
+		}
+		if (begin_bounds.at(mid) <= point && next_bound >= point) {
 			front = mid;
 			back = mid;
 			found = true;
 			break;
 		} else if (point < begin_bounds[mid] && mid > 0) {
 			high = mid - 1;
-		} else if (point > end_bounds[mid] && mid < begin_bounds.size()-1) {
+		} else if (point > next_bound && mid < begin_bounds.size()-1) {
 			low = mid + 1;
 		} else {
 			found = false;
@@ -166,8 +197,10 @@ bool bvec<T>::index_of(uint64_t point, size_t* pfront, size_t* pback) const
 	if (pfront) {
 		for (long i = front; i >= 0
 			     && begin_bounds[i] <= point
-			     && end_bounds[i] >= point; i--) {
-			front = i;
+			     ; i--) {
+			if (i + 1 < begin_bounds.size() && begin_bounds.at(i+1) >= point) {
+				front = i;
+			}
 		}
 		// while (data[front].empty() && (front + 1) < data.size()) {
 		// 	front++;
@@ -176,9 +209,10 @@ bool bvec<T>::index_of(uint64_t point, size_t* pfront, size_t* pback) const
 	}
 	if (pback) {
 		for (long i = back; i < data.size()
-			     && begin_bounds[i] <= point
-			     && end_bounds[i] >= point; i++) {
-			back = i;
+			     && begin_bounds[i] <= point; i++) {
+			if (i + 1 < begin_bounds.size() && begin_bounds.at(i+1) >= point) {
+				back = i;
+			}
 		}
 		// while (data[back].empty() && back > 0) {
 		// 	back--;
@@ -235,7 +269,11 @@ size_t bvec<T>::report() const
 	cout << "num_bins=" << num_bins << endl;
 	size_t total_size = 0;
 	for (size_t i = 0; i < num_bins; i++) {
-		cout << "Bin " << i << ": [" << begin_bounds[i] << " " << end_bounds[i] << "] size=" << data[i].size() << endl;
+		uint64_t next_bound = std::numeric_limits<uint64_t>::max();
+		if (i + 1 < num_bins) {
+			next_bound = begin_bounds[i+1];
+		}
+//		cout << "Bin " << i << ": [" << begin_bounds[i] << " " << next_bound << "] size=" << data[i].size() << endl;
 		total_size += data[i].size();
 	}
 	cout << "total_size=" << total_size << endl;

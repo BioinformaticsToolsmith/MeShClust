@@ -45,18 +45,6 @@ public:
 	bool inner_index_of(uint64_t length, size_t& idx, size_t *front, size_t *back) const;
 	bool empty() const;
 
-	void check() const {
-		for (int i = 0; i < data.size(); i++) {
-			for (int j = 0; j < data[i].size(); j++) {
-				if (data[i][j].first->get_header() == ">seq76 template_4") {
-					cout << "seq76 is at index [" << i << "]["<< j << "]" << endl;
-					return;
-				}
-			}
-
-		}
-		cout << "seq76 is NOT here" << endl;
-	}
 	std::pair<bvec_idx_t, bvec_idx_t>
 	get_range(uint64_t begin_len, uint64_t end_len) const;
 
@@ -74,7 +62,7 @@ public:
 	void erase(size_t r, size_t c);
 private:
         bv_col_type<T> data;
-	vector<uint64_t> begin_bounds, end_bounds;
+	vector<uint64_t> begin_bounds;
 };
 
 

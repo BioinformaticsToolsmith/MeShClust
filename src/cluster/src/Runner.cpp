@@ -16,6 +16,7 @@
 #include "ClusterFactory.h"
 #include "bvec.h"
 #include "Progress.h"
+#include <unistd.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -41,6 +42,10 @@ int Runner::run()
 	Progress progress(files.size(), "Reading in sequences");
 	for (auto i = 0; i < files.size(); i++) {
 		auto f = files.at(i);
+		if (access(f.c_str(), F_OK) == -1) {
+			cerr << "File \"" << f << "\" does not exist" << endl;
+			exit(1);
+		}
 		ChromListMaker maker(f);
 		auto chromList = maker.makeChromOneDigitList();
 

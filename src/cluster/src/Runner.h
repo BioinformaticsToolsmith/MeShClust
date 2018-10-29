@@ -22,7 +22,7 @@ private:
 	template<class T> void print_output(const map<Point<T>*, vector<Point<T>*>*> &m) const;
 	int k = -1;
         int bandwidth;
-	double similarity = 90;
+	double similarity = 0.90;
 	long largest_count = 0;
 	int iterations = 15;
 	int delta = 5;

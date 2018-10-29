@@ -13,8 +13,8 @@ bvec<T>::bvec(vector<uint64_t>& lengths, uint64_t bin_size)
 	std::sort(std::begin(lengths), std::end(lengths));
 	for (uint64_t i = 0; i < lengths.size(); i += bin_size) {
 		begin_bounds.push_back(lengths[i]);
-		uint64_t last_index = std::min((uint64_t)lengths.size() - 1,
-					       i + bin_size - 1);
+		// uint64_t last_index = std::min((uint64_t)lengths.size() - 1,
+		// 			       i + bin_size - 1);
 		//std::cout << "[" << i << " " << last_index << "]" << std::endl;
 	}
 	data.reserve(begin_bounds.size());
@@ -122,102 +122,28 @@ bool bvec<T>::inner_index_of(uint64_t length, size_t &idx, size_t *pfront, size_
 template<class T>
 bool bvec<T>::index_of(uint64_t point, size_t* pfront, size_t* pback) const
 {
-	if (pfront) {
-		size_t low = 0;
-		for (size_t i = 0; i < begin_bounds.size(); i++) {
-			if (begin_bounds[i] <= point) {
-				low = i;
-			}
+	size_t low = begin_bounds.size()-1, high = 0;
+
+	for (size_t i = 0; i < begin_bounds.size(); i++) {
+		size_t prev = 0;
+		size_t prev_index = 0;
+		if (i > 0) {
+			prev_index = i - 1;
+			prev = begin_bounds[i-1];
 		}
+		if (point >= prev && point <= begin_bounds[i]) {
+			low = std::min(low, prev_index);
+			high = std::max(high, prev_index);
+		}
+	}
+	if (point >= begin_bounds[begin_bounds.size()-1]) {
+		high = std::max(high, begin_bounds.size()-1);
+	}
+	if (pfront) {
 		*pfront = low;
 	}
 	if (pback) {
-		size_t high = begin_bounds.size() - 1;
-		for (int j = begin_bounds.size() - 1; j >= 0; j--) {
-			if (begin_bounds[j] >= point) {
-				high = j;
-			}
-		}
 		*pback = high;
-	}
-	return true;
-
-
-
-
-
-
-
-
-
-
-
-	size_t front = 0, back = 0;
-        intmax_t low = 0, high = begin_bounds.size() - 1;
-	bool found = false;
-	if (point < begin_bounds[low] && pfront != NULL) {
-		while (data[low].empty() && (low + 1) < data.size()) {
-			low++;
-		}
-		*pfront = low;
-		return true;
-	}
-	if (point >= begin_bounds[high] && pback != NULL) {
-		while (data[high].empty() && high > 0) {
-			high--;
-		}
-		*pback = high;
-		return true;
-	}
-	for (;low <= high;) {
-		size_t mid = (low + high) / 2;
-		uint64_t next_bound = std::numeric_limits<uint64_t>::max();
-		if (mid + 1 < begin_bounds.size()) {
-			next_bound = begin_bounds.at(mid + 1);
-		}
-		if (begin_bounds.at(mid) <= point && next_bound >= point) {
-			front = mid;
-			back = mid;
-			found = true;
-			break;
-		} else if (point < begin_bounds[mid] && mid > 0) {
-			high = mid - 1;
-		} else if (point > next_bound && mid < begin_bounds.size()-1) {
-			low = mid + 1;
-		} else {
-			found = false;
-			break; // not found
-		}
-	}
-	if (!found) {
-		std::cerr << "error: list not sorted" << std::endl;
-		throw 100;
-		return false;
-	}
-	if (pfront) {
-		for (long i = front; i >= 0
-			     && begin_bounds[i] <= point
-			     ; i--) {
-			if (i + 1 < begin_bounds.size() && begin_bounds.at(i+1) >= point) {
-				front = i;
-			}
-		}
-		// while (data[front].empty() && (front + 1) < data.size()) {
-		// 	front++;
-		// }
-		*pfront = front;
-	}
-	if (pback) {
-		for (long i = back; i < data.size()
-			     && begin_bounds[i] <= point; i++) {
-			if (i + 1 < begin_bounds.size() && begin_bounds.at(i+1) >= point) {
-				back = i;
-			}
-		}
-		// while (data[back].empty() && back > 0) {
-		// 	back--;
-		// }
-		*pback = back;
 	}
 	return true;
 }
@@ -273,7 +199,7 @@ size_t bvec<T>::report() const
 		if (i + 1 < num_bins) {
 			next_bound = begin_bounds[i+1];
 		}
-//		cout << "Bin " << i << ": [" << begin_bounds[i] << " " << next_bound << "] size=" << data[i].size() << endl;
+		cout << "Bin " << i << ": [" << begin_bounds[i] << " " << next_bound << "] size=" << data[i].size() << endl;
 		total_size += data[i].size();
 	}
 	cout << "total_size=" << total_size << endl;

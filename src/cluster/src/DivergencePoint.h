@@ -19,6 +19,11 @@ public:
 	uint64_t operator-(const Point<T>& p) const;
 	bool operator<(Point<T>& p) const;
 	void operator+=(Point<T>& p);
+
+	bool equals(Point<T>& p) {
+		DivergencePoint<T>& c = dynamic_cast< DivergencePoint<T>&>(p);
+		return p.get_id() == get_id() && c.points == points;
+	}
 	void set(Point<T>& p);
 	void display() const;
 	void zero();

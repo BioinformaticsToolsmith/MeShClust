@@ -9,7 +9,7 @@
 #include <cstring>
 #include <cfenv>
 #include <iostream>
-
+#include <limits>
 
 template<class T>
 double DivergencePoint<T>::prob_under(Point<T> &p) const
@@ -181,10 +181,14 @@ template<class T>
 void DivergencePoint<T>::set(Point<T>& p)
 {
 	const DivergencePoint<T>& h = dynamic_cast<const DivergencePoint<T>&>(p);
-	points = std::vector<T>(h.points);
+
+	points = h.points;
+//	points[0] = std::numeric_limits<T>::max();
 	set_length(h.get_length());
 	to_delete = h.to_delete;
+	cout << "old header: " << h.get_header() << endl;
 	Point<T>::set_header(h.get_header());
+	cout << "new header: " << Point<T>::get_header() << endl;
 	set_id(h.get_id());
 }
 

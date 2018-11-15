@@ -61,7 +61,7 @@ void old_merge(vector<Point<T>*> &centers, map<Point<T>*,vector<Point<T>*>*> &cl
 		for (int j = i + 1; j < centers.size(); j++) {
 			T dist = centers[i]->distance(*centers[j]);
 			if (dist < bandwidth) {
-				cout << "Merging centers " << centers[i]->get_header() << " and " << centers[j]->get_header() << endl;
+				//	cout << "Merging centers " << centers[i]->get_header() << " and " << centers[j]->get_header() << endl;
 				for (auto p : *clusters[centers[i]]) {
 					clusters[centers[j]]->push_back(p);
 				}
@@ -282,6 +282,10 @@ vector<pair<int,double> > get_available_or_min(const vector<Point<T>*> &points, 
 	// }
 }
 
+string get_template(string s) {
+	return s.substr(s.find(' ') + 1);
+}
+
 template<class T>
 void mean_shift_update(vector<Center<T> > &part, int j, const Trainer<T>& trn, int delta)
 {
@@ -310,12 +314,35 @@ void mean_shift_update(vector<Center<T> > &part, int j, const Trainer<T>& trn, i
 	trn.filter(center, good);
 	if (!good.empty()) {
 		for (auto p : good) {
+			// if (true) {
+			// 	bool same_cl = false;
+			// 	for (auto q : part[j].getPoints()) {
+			// 		if (q == p.first) {
+			// 			same_cl = true;
+			// 			break;
+			// 		}
+			// 	}
+			// 	if (!same_cl) {
+			// 		cout << "similar sequences to [" << j << "] " << center->get_header() << " " << p.first->get_header() << endl;
+			// 	}
+			// }
+
 			p.first->set_arg_to_this_d(*temp);
 			*top += *temp;
 			bottom++;
 		}
+
 		*top /= bottom;
 		Point<T>* next = trn.closest(top, good);
+		// {
+		// 	string h1 = get_template(center->get_header());
+		// 	string h2 = get_template(next->get_header());
+
+		// 	if (h1 != h2) {
+		// 		#pragma omp critical
+		// 		cout << "update: setting center " << h1 << " to " << h2 << endl;
+		// 	}
+		// }
 		// Point<T> *next = NULL;
 		// int next_dist = std::numeric_limits<int>::max();
 		// for (int i = 0; i < N; i++) {
@@ -326,8 +353,24 @@ void mean_shift_update(vector<Center<T> > &part, int j, const Trainer<T>& trn, i
 		// 	}
 		// }
 		if (next != NULL) {
-			center->set(*next);
-			center->set_data_str(next->get_data_str());
+			if (center->get_id() != next->get_id()) {
+				part[j].setCenter(next);
+
+				//DivergencePoint<T>* pcenter = dynamic_cast<DivergencePoint<T>*>(part[j].getCenter());
+				//*center = *next;
+				//DivergencePoint<T>* pcenter = dynamic_cast<DivergencePoint<T>*>(part[j].getCenter());
+				//center->set(*next);
+//			DivergencePoint<T>* pcenter = dynamic_cast<DivergencePoint<T>*>(center);
+				// if (pcenter->equals(*next)) {
+				// 	cout << "Points are equal" << endl;
+				// } else {
+				// 	cout << "Points are not equal" << endl;
+				// }
+				// DivergencePoint<T>& h = dynamic_cast<DivergencePoint<T>&>(*part[j].getCenter());
+				// h.points[0] = std::numeric_limits<T>::max();
+				//
+				// center->set_data_str(next->get_data_str());
+			}
 		} else {
 			cerr << "mean shift: NULL" << endl;
 		}
@@ -386,14 +429,38 @@ bool merge(vector<Center<T> > &centers, const Trainer<T>& trn, int delta, int ba
 {
 	int num_merge = 0;
 	for (int i = 0; i < centers.size(); i++) {
+
+		DivergencePoint<T>* h = dynamic_cast<DivergencePoint<T>*>(centers[i].getCenter());
+		// if (h->points[0] == std::numeric_limits<T>::max()) {
+		// 	throw h->points[0];
+		// }
 		long ret = trn.merge(centers, i, i + 1, std::min((int)centers.size()-1, i + delta));
 		if (ret > i) {
 
+			// string h1 = get_template(centers[i].getCenter()->get_header());
+			// string h2 = get_template(centers[ret].getCenter()->get_header());
+// #pragma omp critical
+// 			{
+// 				if (h1 != h2) {
+
+// 					cout << "merge: center " << h1 << " to " << h2 << endl;
+// 				} else {
+// 					cout << "good merge: center " <<  h1 << " to " << h2 << endl;
+// 				}
+// 			}
 			num_merge++;
 			auto &to_add = centers[ret].getPoints();
 			auto &to_del = centers[i].getPoints();
 			to_add.insert(std::end(to_add), std::begin(to_del), std::end(to_del));
 			centers[i].lazy_remove();
+		} else {
+//			cout << "MERGE" << endl;
+// 			for (auto j = i + 1; j < std::min((int)centers.size()-1, i + delta); j++) {
+// 				string h1 = get_template(centers[i].getCenter()->get_header());
+// 				string h2 = get_template(centers[j].getCenter()->get_header());
+// //				cout << h1 << " " << h2 << " merge similarity: " << trn.raw_classify(centers[i].getCenter(), centers[j].getCenter()) << endl;
+// 			}
+
 		}
 		// vector<pair<Point<T>*,double> > to_merge;
 		// for (int j = i + 1; j < std::min((int)centers.size(), i + 1 + delta); j++) {
@@ -662,21 +729,25 @@ void ClusterFactory<T>::MS(bvec<T> &points, T bandwidth, double sim, const Train
 	}
 	pa.end();
 //	points.check();
-	size_t total = 0;
-	for (auto cen  : part) {
-		total += cen.getPoints().size();
-	}
-	cout << "total size: " << total << endl;
+	// size_t total = 0;
+	// for (auto cen  : part) {
+	// 	total += cen.getPoints().size();
+	// }
+	// cout << "total size: " << total << endl;
 	Progress pu(iter, "Update");
 	for (int i = 0; i < iter; i++) {
+		//	cout << endl << "Update Iteration " << i << endl;
 		// #ifdef DEBUG
-		//print_output(output + to_string(i), part);
+		//print_output(output + "_update" + to_string(i), part);
 		// #endif
 		//cout << "Mean shift iteration " << i << endl;
 		#pragma omp parallel for
 		for (int j = 0; j < part.size(); j++) {
 			mean_shift_update(part, j, trn, delta);
+//#pragma omp critical
+				//	print_output(output + "_update_" + to_string(i) + "_" + to_string(j), part);
 		}
+		//print_output(output + "_merge" + to_string(i), part);
 		merge(part, trn, delta, bandwidth);
 		pu++;
 	}

@@ -48,12 +48,10 @@ void fill_table(KmerHashTable<unsigned long, V> &table, ChromosomeOneDigit *chro
 		int end = v->at(1);
 		table.wholesaleIncrement(seg_bases, start, end - k + 1);
 	}
-	std::vector<std::string> *keys = table.getKeys();
-	for (std::string str : *keys) {
-		values.push_back(table.valueOf(str.c_str()));
-	}
-	keys->clear();
-	delete keys;
+	unsigned long tableSize = table.getMaxTableSize();
+	values.reserve(values.size() + tableSize);
+	const V * valueArray = table.getValues();
+	std::copy(&valueArray[0], &valueArray[tableSize], std::back_inserter(values));
 }
 
 #ifdef HEADER_HACK

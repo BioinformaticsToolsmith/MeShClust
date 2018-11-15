@@ -40,6 +40,7 @@ public:
 	Point<T>* closest(Point<double>*, vector<pair<Point<T>*,bool> >&) const;
 	long merge(vector<Center<T> > &centers, long current, long begin, long end) const;
 //	Point<T>* merge(Point<T>*, vector<pair<Point<T>*,double> >&) const;
+	double raw_classify(Point<T>*,Point<T>*) const;
 private:
 	matrix::GLM glm;
 	matrix::Matrix weights;
@@ -50,11 +51,10 @@ private:
 	     vector<pair<Point<T>*,
 					 Point<T>*> > > &data, int ncols);
 	void init(double (&matrix)[4][4], double sig, double eps);
-	pair<vector<pair<Point<T>*,
-			 Point<T>*
-			 > >,
-	     vector<pair<Point<T>*,
-			 Point<T>*> > > get_labels(vector<std::pair<Point<T>*,Point<T>*> >&, double cutoff) const;
+
+
+	pair<vector<pair<pair<Point<T>*,Point<T>*>, double> >,
+     vector<pair<pair<Point<T>*,Point<T>*>, double > > > get_labels(vector<std::pair<Point<T>*,Point<T>*> >&, double cutoff) const;
 	Feature<T> *feat;
 	double *log_table;
 	int mat[4][4];

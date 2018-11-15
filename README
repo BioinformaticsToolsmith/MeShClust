@@ -12,7 +12,11 @@ see: https://stackoverflow.com/questions/29057437/compile-openmp-programs-with-g
 Linux/Unix compilation:
 make
 
-Usage: bin/meshclust *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20] [--align] [--sample 1500] [--pivot 40] [--threads TMAX]
+If you find this tool helpful, please cite:
+
+James, Benjamin T. et al. (2018), MeShClust: an intelligent tool for clustering DNA sequences. Nucleic Acids Research, gky315.
+
+Usage: bin/meshclust *.fasta [--id 0.90] [--kmer 3] [--delta 5] [--output output.clstr] [--iterations 20] [--align] [--sample 3000] [--pivot 40] [--threads TMAX]
 
 The most important parameter, --id, controls the identity of the sequences.
     If the identity is below 60%, alignment is automatically used instead of k-mer measures.

@@ -110,6 +110,20 @@ std::tuple<Point<T>*,double,size_t,size_t> Trainer<T>::get_close(Point<T> *p, bv
 //	return get<0>(result);
 	return result;
 
+
+}
+template<class T>
+double Trainer<T>::raw_classify(Point<T>* a,Point<T>* b) const
+{
+	double sum = weights.get(0, 0);
+	double dist = 0;
+	auto cache = feat->compute(*a, *b);
+	for (int col = 1; col < weights.getNumRow(); col++) {
+		double d = (*feat)(col-1, cache);
+		sum += weights.get(col, 0) * d;
+	}
+	double res = 1.0 / (1 + exp(-sum));
+	return res;
 }
 
 template<class T>
@@ -141,53 +155,91 @@ long Trainer<T>::merge(vector<Center<T> > &centers, long current, long begin, lo
 	}
 	return best.first;
 }
+// template<class T>
+// vector<pair<Point<T>*,Point<T>*> > resize_vec(vector<pair<pair<Point<T>*,Point<T>*>, double> > &vec, size_t new_size, double min_align, double max_align, int num_bins)
+// {
+// 	if (new_size == vec.size()) {
+// 		vector<pair<Point<T>*, Point<T>*> > data;
+// 		for (auto p : vec) {
+// 			data.push_back(p.first);
+// 			cout << "ALIGN [" << min_align << " - " << max_align << "] " << p.second << endl;
+// 		}
+// 		return data;
+// 	} else {
+// 		using pv = pair<Point<T>*,Point<T>*>;
+// 		vector<vector<pv> > bins;
+// 		for (int i = 0; i < num_bins; i++) {
+// 			bins.push_back({});
+// 		}
+// 		auto get_bin = [&](double x) {
+// 			if (x >= max_align) {
+// 				return num_bins - 1;
+// 			} else if (x <= min_align) {
+// 				return 0;
+// 			} else {
+// 				return (int)(num_bins * (x - min_align) / (max_align - min_align));
+// 			}
+// 		};
+// 		for (auto p : vec) {
+// 			bins.at(get_bin(p.second)).push_back(p.first);
+// 			cout << "ALIGN [" << min_align << " - " << max_align << "] " << p.second << endl;
+// 		}
+// 		vector<pair<Point<T>*, Point<T>*> > data;
+// 		while (data.size() < new_size) {
+// 			int items_left = new_size - data.size();
+// 			int to_take_from_each = ceil((double)items_left / num_bins);
+// 			for (int i = bins.size()-1; i >= 0; i--) {
+// 				for (int j = 0; j < std::min((size_t)to_take_from_each, bins[i].size()); j++) {
 
+// 					data.push_back(bins[i][j]);
+// 				}
+// 			}
+// 		}
+// 		return data;
+// 	}
+// }
 template<class T>
-vector<pair<Point<T>*,Point<T>*> > resize_vec(vector<pair<pair<Point<T>*,Point<T>*>, double> > &vec, size_t new_size)
+vector<pair<pair<Point<T>*,Point<T>*>, double> > resize_vec(vector<pair<pair<Point<T>*,Point<T>*>, double> > &vec, size_t new_size, double min_align, double max_align, int num_bins)
 {
-	cout << "Vector size: " << vec.size() << " min size: " << new_size << endl;
-	vector<pair<Point<T>*, Point<T>*> > data;
-	if (vec.size() <= new_size) {
-		for (int i = 0; i < vec.size(); i++) {
-			data.push_back(vec[i].first);
+	if (new_size == vec.size()) {
+		vector<pair<pair<Point<T>*, Point<T>*>, double>  > data;
+		for (auto p : vec) {
+			data.push_back(p);
+//			cout << "ALIGN [" << min_align << " - " << max_align << "] " << p.second << endl;
+		}
+		return data;
+	} else {
+		using pv = pair<pair<Point<T>*,Point<T>*>, double>;
+		vector<vector<pv> > bins;
+		for (int i = 0; i < num_bins; i++) {
+			bins.push_back({});
+		}
+		auto get_bin = [&](double x) {
+			if (x >= max_align) {
+				return num_bins - 1;
+			} else if (x <= min_align) {
+				return 0;
+			} else {
+				return (int)(num_bins * (x - min_align) / (max_align - min_align));
+			}
+		};
+		for (auto p : vec) {
+			bins.at(get_bin(p.second)).push_back(p);
+			//cout << "ALIGN [" << min_align << " - " << max_align << "] " << p.second << endl;
+		}
+		vector<pair<pair<Point<T>*, Point<T>*>, double>  > data;
+		while (data.size() < new_size) {
+			int items_left = new_size - data.size();
+			int to_take_from_each = ceil((double)items_left / num_bins);
+			for (int i = bins.size()-1; i >= 0; i--) {
+				for (int j = 0; j < std::min((size_t)to_take_from_each, bins[i].size()); j++) {
+//					cout << "ALIGN [" << min_align << " - " << max_align << "] " << bins[i][j].second << endl;
+					data.push_back(bins[i][j]);
+				}
+			}
 		}
 		return data;
 	}
-	using k = pair<pair<Point<T>*,Point<T>*>, double>;
-	std::sort(vec.begin(), vec.end(), [](const k& a, const k& b) {
-			return a.second < b.second;
-		});
-	double interval = (double)vec.size() / (vec.size() - new_size);
-	std::set<int> indices;
-	int i = 0;
-	for (double index = 0; round(index) < vec.size() && i < (vec.size() - new_size);
-	     i++, index += interval) {
-		int j = round(index);
-		indices.insert(j);
-	}
-
-	std::cout << "index size: " << indices.size() << std::endl;
-
-	// for (double index = 0; round(index) < vec.size() && indices.size() < new_size;
-	//      index += interval) {
-	// 	int j = round(index);
-	// 	indices.insert(vec[j]);
-	// }
-	// vec.erase(vec.begin(), std::remove_if(vec.begin(), vec.end(), [&](const k& a) {
-	// 			return indices.find(a) == indices.end();
-	// 		}));
-	for (auto iter = indices.rbegin(); iter != indices.rend(); iter++) {
-		int idx = *iter;
-		vec.erase(vec.begin() + idx);
-	}
-	if (vec.size() != new_size) {
-		cerr << "sizes are not the same: " << vec.size() << " " << new_size <<  endl;
-		throw "Resize did not work";
-	}
-	for (auto a : vec) {
-		data.push_back(a.first);
-	}
-	return data;
 }
 
 struct rng {
@@ -199,11 +251,8 @@ struct rng {
 	}
 };
 template<class T>
-	pair<vector<pair<Point<T>*,
-			 Point<T>*
-			 > >,
-	     vector<pair<Point<T>*,
-			 Point<T>*> > > Trainer<T>::get_labels(vector<pair<Point<T>*,Point<T>*> > &vec, double cutoff) const
+pair<vector<pair<pair<Point<T>*,Point<T>*>, double> >,
+     vector<pair<pair<Point<T>*,Point<T>*>, double > > > Trainer<T>::get_labels(vector<pair<Point<T>*,Point<T>*> > &vec, double cutoff) const
 {
 
 	auto cmp = [](const pair<Point<T>*,Point<T>*> a, const pair<Point<T>*,Point<T>*> b) {
@@ -273,9 +322,10 @@ template<class T>
 	for (auto p : buf_neg) {
 		buf_vneg.push_back(p);
 	}
-	auto bp = resize_vec(buf_vpos, m_size);
+	int n_bins = 5;
+	auto bp = resize_vec(buf_vpos, m_size, cutoff, 1, n_bins);
 	std::cout << "resizing negative" << std::endl;
-	auto bn = resize_vec(buf_vneg, m_size);
+	auto bn = resize_vec(buf_vneg, m_size, 0.4, cutoff, n_bins);
         auto ret = make_pair(bp, bn);
 	std::cout << "positive=" << ret.first.size() << " negative=" << ret.second.size() << endl;
 	return ret;
@@ -438,6 +488,43 @@ double Trainer<T>::train_n(pair<vector<pair<Point<T> *, Point<T> *> >, vector<pa
 }
 
 template<class T>
+pair<vector<pair<Point<T>*, Point<T>*  > >,
+     vector<pair<Point<T>*, Point<T>*  > > > bin_data(const vector<pair<pair<Point<T>*,Point<T>*>, double> > &vec, double min_align, double max_align) {
+	auto get_bin = [](double x, double min_align, double max_align, int num_bins) {
+		if (x >= max_align) {
+			return num_bins - 1;
+		} else if (x <= min_align) {
+			return 0;
+		} else {
+			return (int)(num_bins * (x - min_align) / (max_align - min_align));
+		}
+	};
+	int n_bins = 10;
+	vector<vector<pair<pair<Point<T>*,Point<T>*>, double> > > bins;
+	for (int i = 0; i < n_bins; i++) {
+		bins.push_back({});
+	}
+	for (auto d : vec) {
+		int idx = get_bin(d.second, min_align, max_align, n_bins);
+		bins.at(idx).push_back(d);
+	}
+	vector<pair<Point<T>*,Point<T>*> > train, test;
+	int last = 0;
+	for (auto bin : bins) {
+		for (int i = 0; i < bin.size(); i++) {
+			if (i % 2 == last) {
+				//	cout << "P_TRAIN " << min_align << "-" << max_align << " " << bin[i].second << endl;
+				train.push_back(bin[i].first);
+			} else {
+				//	cout << "P_TEST " << min_align << "-" << max_align << " " << bin[i].second << endl;
+				test.push_back(bin[i].first);
+			}
+		}
+		last = !last;
+	}
+	return make_pair(train, test);
+}
+template<class T>
 void Trainer<T>::train(double acc_cutoff)
 {
 	pair<vector<pair<Point<T>*,
@@ -454,24 +541,25 @@ void Trainer<T>::train(double acc_cutoff)
 // 										      (a.first->get_header() == b.first->get_header() && a.second->get_header().compare(b.second->get_header()) > 0);
 // 		});
 	auto both = get_labels(_data, cutoff);
-
-	for (int i = 0; i < both.first.size(); i++) {
-		//training.first.push_back(both.first[i]);
-		if (i % 2 == 0) {
-			training.first.push_back(both.first[i]);
-		} else {
-			testing.first.push_back(both.first[i]);
-		}
-	}
+	auto pos  = bin_data(both.first, cutoff, 1);
 	both.first.clear();
-	for (int i = 0; i < both.second.size(); i++) {
-		if (i % 2 == 0) {
-			training.second.push_back(both.second[i]);
-		} else {
-			testing.second.push_back(both.second[i]);
-		}
-	}
+	training.first = pos.first;
+	testing.first = pos.second;
+	pos.first.clear();
+	pos.second.clear();
+
+	auto neg = bin_data(both.second, 0, cutoff);
 	both.second.clear();
+	training.second = neg.first;
+	testing.second = neg.second;
+	pos.first.clear();
+	pos.second.clear();
+
+	cout << "training positive: " << training.first.size() << endl;
+	cout << "training negative: " << training.second.size() << endl;
+	cout << "testing positive: " << testing.first.size() << endl;
+	cout << "testing negative: " << testing.second.size() << endl;
+
 	if (testing.first.empty() || testing.second.empty()) {
 		throw "not enough points to sample";
 	}
@@ -558,6 +646,8 @@ void Trainer<T>::train(double acc_cutoff)
 	}
 	cout << "Final: feat size is " << feat->size() << endl;
 	cout << "Using " << weights.getNumRow()-1 << " features " << __DATE__ << endl;
+
+
 }
 
 template<class T>
@@ -576,10 +666,16 @@ vector<pair<Point<T>*, Point<T>*> > Trainer<T>::split()
 	int aerr = 0;
 	int bandwidth = (1.0 - cutoff) * 10000;
 	vector<Point<T>*> indices;
+	// for (auto p : points) {
+	// 	cout << "before_length: " << p->get_header() << endl;
+	// }
 	std::sort(points.begin(), points.end(), [](const Point<T>* a,
 						   const Point<T>* b) -> bool {
 			  return a->get_length() < b->get_length();
 			  });
+	// for (auto p : points) {
+	// 	cout << "after_length: " << p->get_header() << endl;
+	// }
 	Point<T> *begin_pt = points[points.size()/2];
 
 	std::sort(points.begin(), points.end(), [&](const Point<T>* a,
@@ -590,6 +686,7 @@ vector<pair<Point<T>*, Point<T>*> > Trainer<T>::split()
 	for (int i = 0; i <= num_iterations; i++) {
 		int idx = i * (points.size()-1) / num_iterations;
 		indices.push_back(points[idx]);
+//		cout << "PIVOT: " << points[idx]->get_header() << endl;
 	}
 	cout << "Point pairs: " << indices.size() << endl;
 	size_t to_add_each = max_pts_from_one / 2;

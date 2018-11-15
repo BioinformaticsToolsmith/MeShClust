@@ -15,14 +15,16 @@ struct Center {
 	}
 	Center(const Center<T> &cc) : center(cc.center->clone()), points(cc.points), is_to_delete(cc.is_to_delete) {}
 
-
 	// Center(const Center<T>& c) {
 	// 	center = c.get_clone();
 	// 	points = c.getPoints_c();
 	// 	is_to_delete = c.is_delete();
 	// }
 	~Center() { if (is_to_delete) { delete center; }}
-
+	void setCenter(Point<T>* c) {
+		delete center;
+		center = c->clone();
+	}
 	Point<T>* getCenter() { return center; }
 	vector<Point<T>*> &getPoints() { return points; }
 

@@ -28,7 +28,7 @@ private:
 	int delta = 5;
 	bool align = false;
 	int sample_size = 0;
-	int pivots = 40;
+	int pivots = 20;
 	std::vector<std::string> files;
 	string output = "output.clstr";
 	void get_opts(int argc, char** argv);

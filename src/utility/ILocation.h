@@ -16,6 +16,7 @@ namespace utility {
 
 class ILocation {
 public:
+    inline virtual ~ILocation() {}
 	virtual int getEnd() const = 0;
 	virtual int getStart() const = 0;
 	virtual void setEnd(int) = 0;

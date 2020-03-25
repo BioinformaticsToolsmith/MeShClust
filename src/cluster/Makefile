@@ -12,7 +12,7 @@ ifeq ($(debug),yes)
 else
 	CXXFLAGS += -O3 -flto -march=native -DNDEBUG=1
 endif
-CXXFLAGS += -std=c++11 -pedantic -Wall -Wno-overloaded-virtual -DVERSION=\"$(VERSION)\"
+CXXFLAGS += -std=c++11 -pedantic -Wall -Wno-overloaded-virtual -Wno-unused-variable -DVERSION=\"$(VERSION)\"
 LDFLAGS += -flto -lm
 
 SOURCES := $(shell find ./src -name '*.cpp')

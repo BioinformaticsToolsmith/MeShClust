@@ -1,4 +1,7 @@
 MeShClust
+
+The newest version of MeShClust (v3.0) can be obtained from https://github.com/BioinformaticsToolsmith/Identity.git
+
 Release version
 
 Requirements: g++ 4.9.1 or later, requires Homebrew on Mac OS X

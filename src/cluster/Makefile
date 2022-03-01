@@ -1,13 +1,19 @@
 TARGET ?= meshclust
 VERSION ?= 1.2.0
-CXX ?= g++
-ifeq ($(debug),yes)
-	CXXFLAGS += -ggdb  -fopenmp
+
+ifeq ($(shell uname), Darwin)
+	CXX = xcrun -sdk macosx clang++
 else
-	CXXFLAGS += -fopenmp -O3 -march=native -g
+	CXX ?= g++
 endif
-CXXFLAGS += -std=c++11 -DVERSION=\"$(VERSION)\"
-LDFLAGS += -lm
+
+ifeq ($(debug),yes)
+	CXXFLAGS += -ggdb
+else
+	CXXFLAGS += -O3 -flto -march=native -DNDEBUG=1
+endif
+CXXFLAGS += -std=c++11 -pedantic -Wall -Wno-overloaded-virtual -Wno-unused-variable -DVERSION=\"$(VERSION)\"
+LDFLAGS += -flto -lm
 
 SOURCES := $(shell find ./src -name '*.cpp')
 OBJECTS = $(SOURCES:%.cpp=bin/%.o)

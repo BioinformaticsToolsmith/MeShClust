@@ -12,7 +12,7 @@
 template<class T>
 class Trainer {
 public:
-	Trainer(std::vector<Point<T>*> v, size_t num_points, int largest_count, double cutoff_, size_t max_pts_from_one_, double (&matrix)[4][4], double sig, double eps, int ksize) : points(v), n_points(num_points), cutoff(cutoff_), max_pts_from_one(max_pts_from_one_), k(ksize) {
+	Trainer(std::vector<Point<T>*> v, size_t num_points, int largest_count, double cutoff_, size_t max_pts_from_one_, double (&matrix)[4][4], double sig, double eps, int ksize) : points(v), n_points(num_points), max_pts_from_one(max_pts_from_one_), cutoff(cutoff_), k(ksize) {
 		init(matrix, sig, eps);
 		uintmax_t size = 1000 * 1000 * 10;
 		log_table = new double[size];

@@ -12,7 +12,7 @@ namespace nonltr {
  */
 template<class I, class V>
 EnrichmentMarkovView<I, V>::EnrichmentMarkovView(int k, int order, int m) :
-		minObs(m), factor(10000.00), KmerHashTable<I, V>(k) {
+    KmerHashTable<I, V>(k), minObs(m), factor(10000.00) {
 	initialize(order);
 }
 

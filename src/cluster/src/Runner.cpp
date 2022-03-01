@@ -321,21 +321,13 @@ void test()
 template<class T>
 int Runner::do_run()
 {
-	using pvec = vector<Point<T> *>;
-	using pmap = map<Point<T>*, pvec*>;
-
 	ClusterFactory<T> factory(k);
-	// for (auto f : files) {
-	// 	cout << "File: " << f << endl;
-	// }
+
 	auto points = factory.build_points(files, [&](nonltr::ChromosomeOneDigit *p){ return factory.get_divergence_point(p); });
 	Trainer<T> tr(points, sample_size, largest_count, similarity, pivots, global_mat, global_sigma, global_epsilon, align ? 0 : k);
 	tr.train();
 	vector<uint64_t> lengths;
 	for (Point<T>* p : points) {
-		// if (!align) {
-		// 	p->set_data_str("");
-		// }
 		lengths.push_back(p->get_length());
 	}
 	// Initializing BVec
@@ -348,28 +340,6 @@ int Runner::do_run()
 		bv.insert(p);
 	}
 	bv.insert_finalize();
-//	cout << "bv size: " << bv.report() << endl;
-	// Point<T>* mid = points[points.size()/2];
-	// auto rng = bv.get_range(mid->get_length() * 0.99,
-	// 			mid->get_length() / 0.99);
-	// auto begin = bv.iter(rng.first);
-	// auto end = bv.iter(rng.second);
-	// size_t before = bv.report();
-	// for (int i = 0; i < 1; i++) {
-	// 		bool is_min = false;
-	// 		Point<T>* p = tr.get_close(mid, begin, end, is_min);
-	// 		size_t after = bv.report();
-	// 		if (is_min) {
-	// 			string expr = (after + 1 == before) ? "true" : "false";
-	// 			if (expr == "false") {
-	// 				throw expr;
-	// 			}
-	// 			cout << expr << endl;
-	// 			cout << "is min" << endl;
-	// 		} else {
-	// 			cout << "is not min" << endl;
-	// 		}
-	// }
 	factory.MS(bv, bandwidth, similarity, tr, output, iterations, delta);
 	return 0;
 }

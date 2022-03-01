@@ -22,7 +22,7 @@
 template<class T>
 class ClusterFactory {
 public:
-	ClusterFactory(int k_len, int npp=std::numeric_limits<int>::max()) : k(k_len), num_per_partition(npp) {}
+	ClusterFactory(int k_len, int npp=std::numeric_limits<int>::max()) : num_per_partition(npp), k(k_len) {}
 	std::vector<Point<T>*> build_points(vector<string> files, std::function<Point<T>*(ChromosomeOneDigit*)> get_point);
         Point<T>* get_histogram(ChromosomeOneDigit *chrom);
 	Point<T>* get_divergence_point(ChromosomeOneDigit *chrom);

@@ -1,7 +1,10 @@
-# CXX = /usr/bin/c++
-CXX ?= g++
+ifeq ($(shell uname), Darwin)
+	CXX = xcrun -sdk macosx clang++
+else
+	CXX ?= g++
+endif
 
-CXXFLAGS =	-O3 -g -fmessage-length=0 -Wall -march=native -std=c++11
+CXXFLAGS = -std=c++11 -pedantic -Wall -Wno-overloaded-virtual -O3 -flto -march=native
 
 #
 # Objects

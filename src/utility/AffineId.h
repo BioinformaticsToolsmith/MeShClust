@@ -22,22 +22,14 @@ private:
 
 	int len1;
 	int len2;
-	//int lenTotal;
 	int lenCS;
 	int lenPath;
-	int * m; // Middle level
-	//int * l; // Lower level
-	int * u; // Upper level
-
-	// const int MATCH = 4; // Score of a match
-	// const int MIS = -4; // Score of a mismatch
-	// const int OPEN = -2; // Score of a gap opening
-	// const int EXT = -1; // Score of a gap extension
 
 	const int MATCH = 1;
 	const int MIS = -1;
 	const int OPEN = -2;
 	const int EXT = -1;
+
 	void align();
 
 public:
